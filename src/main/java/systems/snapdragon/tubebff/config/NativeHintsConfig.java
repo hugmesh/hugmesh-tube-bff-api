@@ -7,6 +7,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.ImportRuntimeHints;
 import systems.snapdragon.tubebff.access.TubeAccessDto;
 import systems.snapdragon.tubebff.access.TubeAccess;
+import systems.snapdragon.tubebff.google.TubeGoogleDto;
+import systems.snapdragon.tubebff.google.TubeGoogleLink;
+import systems.snapdragon.tubebff.google.TubeSubscription;
 
 /**
  * GraalVM native-image / AOT reachability hints for the bits the static analyzer
@@ -40,7 +43,15 @@ public class NativeHintsConfig {
                     .registerType(TubeAccessDto.AccessList.class, dtoCategories())
                     .registerType(TubeAccessDto.GrantOrBan.class, dtoCategories())
                     .registerType(TubeAccessDto.Timeout.class, dtoCategories())
-                    .registerType(TubeAccess.class, dtoCategories());
+                    .registerType(TubeAccess.class, dtoCategories())
+                    // PR3 — the Google-connect / subscriptions JSON DTOs + entities.
+                    .registerType(TubeGoogleDto.AuthorizeUrl.class, dtoCategories())
+                    .registerType(TubeGoogleDto.ConnectStatus.class, dtoCategories())
+                    .registerType(TubeGoogleDto.Subscription.class, dtoCategories())
+                    .registerType(TubeGoogleDto.SubscriptionList.class, dtoCategories())
+                    .registerType(TubeGoogleDto.SyncResult.class, dtoCategories())
+                    .registerType(TubeGoogleLink.class, dtoCategories())
+                    .registerType(TubeSubscription.class, dtoCategories());
 
             hints.resources()
                     .registerPattern("META-INF/resources/webjars/swagger-ui/*")

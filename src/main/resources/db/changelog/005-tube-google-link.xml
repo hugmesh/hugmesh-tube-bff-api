@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.29.xsd">
+
+    <!--
+      tube_google_link — the per-(brand,user) Google OAuth CONNECTION (PR3). This is the
+      youtube.readonly OAuth USER token store, SEPARATE from the Casdoor sign-in: a user
+      explicitly connects their Google account so subscriptions.list?mine=true can be
+      paged with their token.
+
+      ── The crown jewel: the refresh token at rest ──────────────────────────────
+      The Google REFRESH TOKEN (the thing access_type=offline&prompt=consent yields) is
+      the long-lived credential. It is stored ONLY as an AES-256-GCM CIPHERTEXT
+      (refresh_token_ciphertext = base64(iv || ct || tag), encrypted by TokenCipher with
+      the per-service DEK from ESO secret/<brand>/tube-token-dek). There is NO plaintext
+      column — the cleartext refresh token never lands in a row. dek_id records WHICH DEK
+      version encrypted the blob (key rotation forward-compat).
+
+      ── Owner + domain scoping (fail-closed, single-domain) ─────────────────────
+      Both domain AND user_subject are stamped SERVER-SIDE: user_subject = the connecting
+      principal's Casdoor sub, domain = the validated-issuer brand. A personal Google
+      connect is ALWAYS single-domain — owner-scoped reads key on (domain, user_subject),
+      and a request whose domain can't be resolved FAILS CLOSED (no SUPERADMIN null-domain
+      bypass for these personal reads, else a SUPERADMIN could match rows across brands by
+      user_subject alone).
+
+      ── Lifecycle ───────────────────────────────────────────────────────────────
+        - reauth_required (default false) is set true when a refresh exchange fails
+          (revoked/expired at Google's side) so the UI prompts a re-connect; the sync
+          loop STOPS rather than retrying forever.
+        - revoked_at is stamped on disconnect (best-effort google.revoke + soft-revoke the
+          row); the row is RETAINED (audit), never hard-deleted.
+        - UNIQUE(domain, user_subject) on the LIVE row (revoked_at IS NULL) — at most one
+          active Google connection per (brand,user). PG-only partial index (gated like the
+          004 partial-unique); on H2 the service's find-before-insert is the guard.
+
+      ── Portable DDL ─────────────────────────────────────────────────────────────
+      id is a varchar(64) app-generated UUID (no gen_random_uuid dependency, portable to
+      the H2 PG-compat slice store). timestamp with time zone -> the portable Liquibase
+      generic type so the same DDL applies on H2.
+    -->
+
+    <changeSet id="005-tube-google-link" author="snapdragon">
+        <comment>tube_google_link Google OAuth connection (refresh token AES-256-GCM at
+                 rest; no plaintext column).</comment>
+        <createTable tableName="tube_google_link">
+            <column name="id" type="varchar(64)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <!-- The brand/tenant the connection belongs to, stamped SERVER-SIDE from the
+                 connecting principal's validated-issuer brand (NEVER a request field).
+                 NOT NULL — a personal connect is always single-domain. -->
+            <column name="domain" type="varchar(64)" defaultValue="default">
+                <constraints nullable="false"/>
+            </column>
+            <!-- The Casdoor subject who connected their Google account (the OWNER). -->
+            <column name="user_subject" type="varchar(400)">
+                <constraints nullable="false"/>
+            </column>
+            <!-- Google's stable account id (sub) + email from the token exchange — for
+                 display + de-dup; NULLABLE until the first successful exchange populates
+                 them. -->
+            <column name="google_sub" type="varchar(255)"/>
+            <column name="google_email" type="varchar(320)"/>
+            <!-- The crown jewel: base64(iv || ct || tag) AES-256-GCM ciphertext of the
+                 Google refresh token. There is NO plaintext column. NOT NULL — a row only
+                 exists after a successful exchange yielded a refresh token. -->
+            <column name="refresh_token_ciphertext" type="clob">
+                <constraints nullable="false"/>
+            </column>
+            <!-- Which DEK version encrypted the blob (key-rotation forward-compat). -->
+            <column name="dek_id" type="varchar(64)"/>
+            <!-- The OAuth scopes granted (space-delimited) — youtube.readonly et al. -->
+            <column name="scopes" type="varchar(1024)"/>
+            <column name="connected_at" type="timestamp with time zone" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+            <!-- Set true when a refresh exchange fails (the token was revoked/expired at
+                 Google) so the UI prompts a re-connect and the sync loop STOPS. -->
+            <column name="reauth_required" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <!-- Stamped on disconnect (soft-revoke); the row is RETAINED = audit. A row
+                 with revoked_at NULL is the LIVE connection. -->
+            <column name="revoked_at" type="timestamp with time zone"/>
+        </createTable>
+    </changeSet>
+
+    <!--
+      Partial UNIQUE on the LIVE row: at most one active Google connection per
+      (domain, user_subject) where revoked_at IS NULL. PostgreSQL supports partial
+      indexes; the H2 PG-compat slice store does NOT, so this is gated dbms=postgresql
+      (onFail=MARK_RAN) and applies only on Postgres. On H2 the at-most-one-live-row
+      invariant is enforced by the SERVICE (find-live-before-insert) — mirroring the
+      004 uq_tube_access_active gating exactly.
+    -->
+    <changeSet id="005-tube-google-link-live-unique" author="snapdragon">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <dbms type="postgresql"/>
+        </preConditions>
+        <comment>Partial UNIQUE: at most one LIVE Google connection per (domain,
+                 user_subject) (revoked_at IS NULL). Revoked rows are excluded so the
+                 audit trail can hold prior connections.</comment>
+        <sql>
+            CREATE UNIQUE INDEX uq_tube_google_link_live
+                ON tube_google_link (domain, user_subject)
+                WHERE revoked_at IS NULL
+        </sql>
+        <rollback>DROP INDEX uq_tube_google_link_live</rollback>
+    </changeSet>
+
+    <changeSet id="005-tube-google-link-lookup-index" author="snapdragon">
+        <comment>Index the owner-scoped lookup (resolve a principal's live connection for
+                 their brand).</comment>
+        <createIndex tableName="tube_google_link" indexName="idx_tube_google_link_lookup">
+            <column name="domain"/>
+            <column name="user_subject"/>
+        </createIndex>
+        <rollback>
+            <dropIndex tableName="tube_google_link" indexName="idx_tube_google_link_lookup"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

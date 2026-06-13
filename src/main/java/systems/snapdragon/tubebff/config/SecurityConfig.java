@@ -132,6 +132,15 @@ public class SecurityConfig {
         // SUPERADMIN super-role) end-to-end. Admins reach it via the converter's ROLE_ADMIN;
         // SUPERADMIN reaches it via the role hierarchy edge.
         ex.pathMatchers("/bff/tube/admin/**").hasAnyRole("ADMIN", "SUPERADMIN");
+        // The Google-connect + subscriptions surfaces (PR3) — the BASE service role
+        // ROLE_TUBE is the route/connect floor here (the gateway also enforces it). The
+        // FINER gate is the DEFAULT-DENY use overlay: TubeAccessGuard.assertCanUse(auth) is
+        // called FIRST in every method (an active tube_access use grant AND not banned,
+        // SUPERADMIN exempt), and the owner-scope (server-derived subject+brand) keeps a
+        // user to THEIR OWN connection — neither of which a static SpEL can express.
+        // Declared BEFORE the /bff/tube/** floor so this ROLE_TUBE rule wins for these.
+        ex.pathMatchers("/bff/tube/google-connect/**").hasRole("TUBE");
+        ex.pathMatchers("/bff/tube/subscriptions/**").hasRole("TUBE");
         // The rest of the tube surface — the ROLE_TUBE floor is enforced at the
         // gateway, so .authenticated() proves authentication here. The exact use
         // decision (an active grant AND NOT an active ban, SUPERADMIN exempt) is enforced

@@ -17,12 +17,26 @@
               partial-unique on active(domain,user_subject,access_type), domain-scoped. The
               TubeAccessGuard DEFAULT-DENY enforcement reads this at request time.)
 
-      The tube_google_link (Google OAuth refresh-token store) + tube_subscription +
-      tube_download_job work queue + tube_storage_usage budgets (PR3/PR4) are added in
+        005 — tube_google_link  (PR3 — the per-(brand,user) Google OAuth youtube.readonly
+              connection. The crown-jewel REFRESH TOKEN is stored ONLY as an AES-256-GCM
+              ciphertext (refresh_token_ciphertext = base64(iv||ct||tag); no plaintext
+              column), encrypted by TokenCipher with the per-service DEK from ESO
+              secret/<brand>/tube-token-dek. owner+domain stamped server-side; partial
+              UNIQUE on the LIVE row (revoked_at IS NULL); reauth_required STOPS the sync
+              loop on a refresh failure; soft-revoke = audit.)
+
+        006 — tube_subscription (PR3 — the per-(brand,user) mirror of the user's subscribed
+              YouTube channels; SubscriptionsSyncService pages subscriptions.list?mine=true
+              and idempotently UPSERTs one row per channel. UNIQUE(domain,user_subject,
+              channel_id).)
+
+      The tube_download_job work queue + tube_storage_usage budgets (PR4) are added in
       later changesets. The changeSet numbering starts at 004 to match the owncast_grant
       / wiki_access (004) overlay this is cloned from (001-003 in wiki-bff are the wiki
       content store, which tube has no analogue of — use is grant-only).
     -->
 
     <include file="db/changelog/004-tube-access.xml"/>
+    <include file="db/changelog/005-tube-google-link.xml"/>
+    <include file="db/changelog/006-tube-subscription.xml"/>
 </databaseChangeLog>

@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.29.xsd">
+
+    <!--
+      tube_subscription — the per-(brand,user) mirror of the user's YouTube subscribed
+      channels (PR3). SubscriptionsSyncService pages subscriptions.list?mine=true with the
+      connected user's refreshed access token and UPSERTs one row per channel.
+
+      ── Owner + domain scoping ───────────────────────────────────────────────────
+      domain + user_subject are stamped SERVER-SIDE (the same brand+owner as the
+      tube_google_link that authorized the sync). A user only ever reads THEIR OWN
+      subscriptions in THEIR brand.
+
+      ── Idempotent UPSERT ────────────────────────────────────────────────────────
+      UNIQUE(domain, user_subject, channel_id) — a re-sync of a channel updates its
+      title/thumbnail/synced_at in place rather than inserting a duplicate. PG-only
+      partial-less unique index here is a FULL unique (channel rows are never soft-deleted
+      in this table), so it is portable to H2 directly (no partial predicate, no dbms
+      gating needed) — but the UPSERT itself differs per dialect, so the repository does a
+      portable update-then-insert (find-then-write) rather than ON CONFLICT, keeping the
+      H2 slice test and Postgres identical.
+
+      ── Portable DDL ─────────────────────────────────────────────────────────────
+      id is a varchar(64) app-generated UUID. timestamp with time zone -> the portable
+      Liquibase generic type.
+    -->
+
+    <changeSet id="006-tube-subscription" author="snapdragon">
+        <comment>tube_subscription mirror of the user's subscribed YouTube channels
+                 (idempotent UPSERT per channel).</comment>
+        <createTable tableName="tube_subscription">
+            <column name="id" type="varchar(64)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <!-- The brand/tenant, stamped SERVER-SIDE from the validated-issuer brand. -->
+            <column name="domain" type="varchar(64)" defaultValue="default">
+                <constraints nullable="false"/>
+            </column>
+            <!-- The Casdoor subject who owns these subscriptions (the connected user). -->
+            <column name="user_subject" type="varchar(400)">
+                <constraints nullable="false"/>
+            </column>
+            <!-- The YouTube channel id (the snippet.resourceId.channelId). -->
+            <column name="channel_id" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="channel_title" type="varchar(1024)"/>
+            <column name="thumbnail_url" type="varchar(2048)"/>
+            <column name="synced_at" type="timestamp with time zone" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="006-tube-subscription-unique" author="snapdragon">
+        <comment>UNIQUE (domain, user_subject, channel_id) — at most one row per
+                 (brand, user, channel); the sync UPSERTs in place. A FULL (non-partial)
+                 unique index, portable to both Postgres and the H2 slice store.</comment>
+        <addUniqueConstraint tableName="tube_subscription"
+                             columnNames="domain, user_subject, channel_id"
+                             constraintName="uq_tube_subscription_channel"/>
+        <rollback>
+            <dropUniqueConstraint tableName="tube_subscription"
+                                  constraintName="uq_tube_subscription_channel"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="006-tube-subscription-lookup-index" author="snapdragon">
+        <comment>Index the owner-scoped list read (a user's channels for their brand).</comment>
+        <createIndex tableName="tube_subscription" indexName="idx_tube_subscription_lookup">
+            <column name="domain"/>
+            <column name="user_subject"/>
+        </createIndex>
+        <rollback>
+            <dropIndex tableName="tube_subscription" indexName="idx_tube_subscription_lookup"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

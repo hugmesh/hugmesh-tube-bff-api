@@ -24,6 +24,24 @@ spring:
     user: "${SPRING_LIQUIBASE_USER:tubebff}"
     password: "${SPRING_LIQUIBASE_PASSWORD:}"
 
+# ── Google (youtube.readonly) connect + refresh-token-at-rest (PR3) ──────────
+# Every value here is ESO-projected from Vault at deploy time — the repo carries
+# ONLY the env references + safe defaults, NEVER a secret. The dedicated Google OAuth
+# Web client creds live in Vault secret/<brand>/tube-google (-> TUBE_GOOGLE_CLIENT_ID
+# / _CLIENT_SECRET / _REDIRECT_URI); the per-service AES-256 DEK that encrypts the
+# crown-jewel refresh token lives in Vault secret/<brand>/tube-token-dek (->
+# TUBE_GOOGLE_DEK, base64 of exactly 32 bytes); the OAuth-state HMAC key is
+# TUBE_GOOGLE_STATE_HMAC_KEY (base64, >=16 bytes). The blank defaults mean a context
+# without the secrets fails closed when the connect endpoints are exercised
+# (decodeDek()/decodeStateHmacKey() throw), never serving a degraded cipher.
+tube:
+  google:
+    client-id: "${TUBE_GOOGLE_CLIENT_ID:}"
+    client-secret: "${TUBE_GOOGLE_CLIENT_SECRET:}"
+    redirect-uri: "${TUBE_GOOGLE_REDIRECT_URI:}"
+    dek: "${TUBE_GOOGLE_DEK:}"
+    state-hmac-key: "${TUBE_GOOGLE_STATE_HMAC_KEY:}"
+
 # SpringDoc OpenAPI. The spec at /v3/api-docs is the source the platform
 # ng-openapi-gen typed client (the paired snapdragon-tube-ui, PR6) + the docs
 # pipeline consume. Spec + UI are gated by SecurityConfig: permitAll under dev/test (so
