@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.29.xsd">
+
+    <!--
+      Download-queue fields for tube_subscription (PR4). The base table is created in
+      006-tube-subscription.xml (PR3 google-connect). These columns are the ENQUEUE SOURCE
+      fields the download work-queue reads: for each subscribed channel with a known
+      latest_video_id, the enqueue path creates a tube_download_job (deduped on video_id).
+
+        latest_video_id   — the most-recent known video for the channel. NULL means the
+                            sync has not yet recorded a video for this channel; the enqueue
+                            path skips channels with a NULL latest_video_id.
+        latest_video_title — human label for the latest video (for display in job list).
+        created_at        — row creation timestamp (used by the download repo's UPSERT
+                            return value; the sync sets this on first insert).
+        updated_at        — row last-modified timestamp (bumped on every sync UPSERT).
+    -->
+
+    <changeSet id="007-tube-subscription-download-fields" author="snapdragon">
+        <comment>Add download-queue source fields to tube_subscription: latest_video_id,
+                 latest_video_title, created_at, updated_at.</comment>
+        <addColumn tableName="tube_subscription">
+            <column name="latest_video_id" type="varchar(255)"/>
+            <column name="latest_video_title" type="varchar(1024)"/>
+            <column name="created_at" type="timestamp with time zone" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="tube_subscription" columnName="latest_video_id"/>
+            <dropColumn tableName="tube_subscription" columnName="latest_video_title"/>
+            <dropColumn tableName="tube_subscription" columnName="created_at"/>
+            <dropColumn tableName="tube_subscription" columnName="updated_at"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

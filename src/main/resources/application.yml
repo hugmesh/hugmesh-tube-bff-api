@@ -8,8 +8,9 @@ spring:
           issuer-uri: "${CASDOOR_ISSUER_URI:https://id.snapdragon.systems}"
 
   # Runtime data access is REACTIVE (R2DBC) over the tube-bff governance store: the
-  # tube_access use grant/timeout/ban overlay (PR2). The tube_google_link +
-  # tube_subscription + tube_download_job + tube_storage_usage tables arrive in PR3/PR4.
+  # tube_access use grant/timeout/ban overlay (PR2) + the tube_download_job work queue +
+  # tube_storage_usage budgets + tube_subscription enqueue source (PR4). The
+  # tube_google_link table arrives with the Google-connect path.
   r2dbc:
     url: "${SPRING_R2DBC_URL:r2dbc:postgresql://tube-bff-db.snapdragon-backend.svc.cluster.local:5432/tubebff}"
     username: "${SPRING_R2DBC_USERNAME:tubebff}"
@@ -56,6 +57,14 @@ springdoc:
   # Restrict the component scan to this BFF's own controllers so the spec stays the
   # tube-BFF surface only (no stray springframework/actuator paths leak in).
   packages-to-scan: systems.snapdragon.tubebff
+
+# Tube download work-queue (PR4) tunables. The default per-user storage budget seeded
+# onto a new tube_storage_usage accounting row (bytes); an admin may raise/lower it per
+# user via /bff/tube/admin/storage-budget. 10 GiB default. used_bytes >= budget_bytes ⇒
+# the user is FULL and new download work is marked 'skipped' (pause-on-full).
+app:
+  tube:
+    default-budget-bytes: "${TUBE_DEFAULT_BUDGET_BYTES:10737418240}"
 
 management:
   endpoints:
