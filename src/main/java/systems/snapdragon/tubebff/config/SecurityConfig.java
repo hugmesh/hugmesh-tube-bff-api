@@ -128,9 +128,15 @@ public class SecurityConfig {
         // The MANAGE-ALL surface — SUPERADMIN only (TUBE_MANAGE: list-all + history).
         // Declared BEFORE the admin + floor prefixes so the most-specific path matches first.
         ex.pathMatchers("/bff/tube/superadmin/**").hasRole("SUPERADMIN");
-        // The TUBE_GOVERN grant/timeout/ban/restore seam — ADMIN (or the cross-domain
-        // SUPERADMIN super-role) end-to-end. Admins reach it via the converter's ROLE_ADMIN;
-        // SUPERADMIN reaches it via the role hierarchy edge.
+        // The INTERNAL download-worker seam (the future yt-dlp CronJob polls claim/report)
+        // — ROLE_TUBE_WORKER (a service/mTLS principal) ONLY. Declared BEFORE the human
+        // floor so the worker prefix is NOT swallowed by .authenticated(). Deliberately
+        // OUTSIDE the human role hierarchy (no SUPERADMIN edge to TUBE_WORKER), so NO human
+        // role can claim/complete another user's download job — a machine operation only.
+        ex.pathMatchers("/bff/tube/internal/**").hasRole("TUBE_WORKER");
+        // The TUBE_GOVERN grant/timeout/ban/restore seam + the admin storage-budget seam —
+        // ADMIN (or the cross-domain SUPERADMIN super-role) end-to-end. Admins reach it via
+        // the converter's ROLE_ADMIN; SUPERADMIN reaches it via the role hierarchy edge.
         ex.pathMatchers("/bff/tube/admin/**").hasAnyRole("ADMIN", "SUPERADMIN");
         // The Google-connect + subscriptions surfaces (PR3) — the BASE service role
         // ROLE_TUBE is the route/connect floor here (the gateway also enforces it). The

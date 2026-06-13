@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.29.xsd">
+
+    <!--
+      tube_download_job + tube_storage_usage — the DOWNLOAD WORK-QUEUE + content model
+      (PR4). The BFF owns the QUEUE + the per-user storage budget; the actual yt-dlp
+      runner image + the generator-gated CronJob that polls the internal claim/report
+      endpoints are a DEFERRED follow-up (no generator manifests here).
+
+        tube_download_job — one row per (domain, user_subject, video) the system wants
+        DOWNLOADED. A small state machine:
+
+            queued -> claimed -> downloading -> done
+                                             -> failed   (a worker may re-queue on retry)
+            queued -> skipped   (storage budget full at enqueue/claim — pause-on-full,
+                                 never a throw-loop)
+
+          - DEDUP: a partial-portable UNIQUE(domain, user_subject, video_id) so the same
+            video is enqueued at most ONCE per (brand,user). The enqueue is idempotent on
+            this triple (find-then-insert on H2; INSERT ... ON CONFLICT DO NOTHING on PG).
+          - CLAIM: a worker atomically claims N 'queued' rows via a guarded
+            UPDATE ... WHERE state='queued' (the FOR-UPDATE-SKIP-LOCKED-equivalent CAS),
+            stamping claimed_by + claimed_at + state='claimed', so a row is claimed by
+            EXACTLY ONE worker under concurrency.
+          - DOMAIN-scoped: every read/owner-list carries the brand predicate (DomainScope),
+            stamped SERVER-SIDE from the validated issuer; SUPERADMIN cross-domain.
+
+        tube_storage_usage — per (domain, user_subject) running content-byte accounting +
+        the budget cap. used_bytes >= budget_bytes ⇒ the user is FULL: the enqueue/claim
+        path marks new work 'skipped' (pause-on-full) rather than spinning. addUsage bumps
+        used_bytes when a job completes (markDone).
+
+      ── Portable DDL ─────────────────────────────────────────────────────────
+      id is a varchar(64) app-generated UUID string (portable across Postgres + the H2
+      PG-compat slice store, no gen_random_uuid dependency). timestamp with time zone ->
+      the portable Liquibase generic type. bytes/used_bytes/budget_bytes are bigint.
+      The reserved word `state` is covered by H2 NON_KEYWORDS / is ALTER-friendly on PG.
+    -->
+
+    <!-- ── tube_download_job ──────────────────────────────────────────────── -->
+    <changeSet id="005-tube-download-job" author="snapdragon">
+        <comment>tube_download_job download work-queue (state machine + dedup +
+                 claim/report; domain-scoped).</comment>
+        <createTable tableName="tube_download_job">
+            <column name="id" type="varchar(64)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <!-- The brand the job belongs to, stamped SERVER-SIDE from the validated
+                 issuer (NEVER a request field). NOT NULL, DEFAULT 'default' so a
+                 single-tenant cluster carries the platform default domain. -->
+            <column name="domain" type="varchar(64)" defaultValue="default">
+                <constraints nullable="false"/>
+            </column>
+            <!-- The Casdoor subject who OWNS this job (the subscriber whose feed it came
+                 from). The owner-scope key — a user lists/enqueues only their own jobs. -->
+            <column name="user_subject" type="varchar(400)">
+                <constraints nullable="false"/>
+            </column>
+            <!-- The source YouTube channel + video the job downloads. video_id is the
+                 dedup key within (domain, user_subject). -->
+            <column name="channel_id" type="varchar(255)"/>
+            <column name="video_id" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="title" type="varchar(1024)"/>
+            <!-- queued | claimed | downloading | done | failed | skipped (CHECK below). -->
+            <column name="state" type="varchar(16)" defaultValue="queued">
+                <constraints nullable="false"/>
+            </column>
+            <!-- The worker id that won the claim CAS (NULL while queued). -->
+            <column name="claimed_by" type="varchar(255)"/>
+            <column name="claimed_at" type="timestamp with time zone"/>
+            <!-- Attempt counter (incremented each claim) + the last error string a worker
+                 reported on failure (audited, drives retry/GC decisions). -->
+            <column name="attempts" type="int" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="last_error" type="varchar(2048)"/>
+            <!-- Downloaded content size (bytes) + the path on the per-domain content PVC,
+                 set on markDone (the byte count feeds tube_storage_usage). -->
+            <column name="bytes" type="bigint"/>
+            <column name="content_path" type="varchar(2048)"/>
+            <column name="created_at" type="timestamp with time zone" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="005-tube-download-job-state-check" author="snapdragon">
+        <comment>CHECK: state is one of the six work-queue lifecycle values.</comment>
+        <sql>
+            ALTER TABLE tube_download_job
+                ADD CONSTRAINT ck_tube_download_job_state
+                CHECK (state IN ('queued', 'claimed', 'downloading', 'done', 'failed', 'skipped'))
+        </sql>
+        <rollback>ALTER TABLE tube_download_job DROP CONSTRAINT ck_tube_download_job_state</rollback>
+    </changeSet>
+
+    <!--
+      DEDUP UNIQUE(domain, user_subject, video_id) — at most ONE job per video per
+      (brand,user). A full (non-partial) unique index, so it is portable to BOTH Postgres
+      and the H2 PG-compat slice store (unlike the tube_access PARTIAL unique). The enqueue
+      is idempotent against it (find-then-insert on H2; ON CONFLICT DO NOTHING on PG).
+    -->
+    <changeSet id="005-tube-download-job-dedup-unique" author="snapdragon">
+        <comment>UNIQUE dedup: one download job per (domain, user_subject, video_id).</comment>
+        <createIndex tableName="tube_download_job" indexName="uq_tube_download_job_dedup" unique="true">
+            <column name="domain"/>
+            <column name="user_subject"/>
+            <column name="video_id"/>
+        </createIndex>
+        <rollback>
+            <dropIndex tableName="tube_download_job" indexName="uq_tube_download_job_dedup"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="005-tube-download-job-claim-index" author="snapdragon">
+        <comment>Index the claim scan (oldest queued rows first) + the owner list.</comment>
+        <createIndex tableName="tube_download_job" indexName="idx_tube_download_job_state">
+            <column name="state"/>
+            <column name="created_at"/>
+        </createIndex>
+        <rollback>
+            <dropIndex tableName="tube_download_job" indexName="idx_tube_download_job_state"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="005-tube-download-job-owner-index" author="snapdragon">
+        <comment>Index the owner-scoped list read (domain, user_subject).</comment>
+        <createIndex tableName="tube_download_job" indexName="idx_tube_download_job_owner">
+            <column name="domain"/>
+            <column name="user_subject"/>
+        </createIndex>
+        <rollback>
+            <dropIndex tableName="tube_download_job" indexName="idx_tube_download_job_owner"/>
+        </rollback>
+    </changeSet>
+
+    <!-- ── tube_storage_usage ─────────────────────────────────────────────── -->
+    <changeSet id="005-tube-storage-usage" author="snapdragon">
+        <comment>tube_storage_usage per-user content-byte accounting + budget cap
+                 (PK(domain, user_subject); pause-on-full at enqueue/claim).</comment>
+        <createTable tableName="tube_storage_usage">
+            <!-- Composite PK (domain, user_subject): exactly one accounting row per
+                 (brand, user). domain stamped SERVER-SIDE from the validated issuer. -->
+            <column name="domain" type="varchar(64)" defaultValue="default">
+                <constraints nullable="false"/>
+            </column>
+            <column name="user_subject" type="varchar(400)">
+                <constraints nullable="false"/>
+            </column>
+            <!-- Running total of downloaded content bytes for this (brand,user). -->
+            <column name="used_bytes" type="bigint" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <!-- The per-user budget cap (bytes). used_bytes >= budget_bytes ⇒ FULL ⇒
+                 new work is marked 'skipped' (pause-on-full). Seeded from config on the
+                 first accounting row; an ADMIN may raise/lower it. -->
+            <column name="budget_bytes" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="005-tube-storage-usage-pk" author="snapdragon">
+        <comment>Composite PK (domain, user_subject) — one accounting row per (brand,user).</comment>
+        <addPrimaryKey tableName="tube_storage_usage"
+                       columnNames="domain, user_subject"
+                       constraintName="pk_tube_storage_usage"/>
+        <rollback>
+            <dropPrimaryKey tableName="tube_storage_usage" constraintName="pk_tube_storage_usage"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

@@ -27,6 +27,9 @@
       ── Portable DDL ─────────────────────────────────────────────────────────────
       id is a varchar(64) app-generated UUID. timestamp with time zone -> the portable
       Liquibase generic type.
+
+      The download-queue fields (latest_video_id, latest_video_title, created_at,
+      updated_at) are added in changeset 007-tube-subscription-download-fields.xml.
     -->
 
     <changeSet id="006-tube-subscription" author="snapdragon">

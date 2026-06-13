@@ -7,9 +7,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.ImportRuntimeHints;
 import systems.snapdragon.tubebff.access.TubeAccessDto;
 import systems.snapdragon.tubebff.access.TubeAccess;
+import systems.snapdragon.tubebff.download.DownloadJob;
+import systems.snapdragon.tubebff.download.StorageUsage;
+import systems.snapdragon.tubebff.download.TubeDownloadDto;
+import systems.snapdragon.tubebff.download.TubeSubscription;
 import systems.snapdragon.tubebff.google.TubeGoogleDto;
 import systems.snapdragon.tubebff.google.TubeGoogleLink;
-import systems.snapdragon.tubebff.google.TubeSubscription;
 
 /**
  * GraalVM native-image / AOT reachability hints for the bits the static analyzer
@@ -44,13 +47,22 @@ public class NativeHintsConfig {
                     .registerType(TubeAccessDto.GrantOrBan.class, dtoCategories())
                     .registerType(TubeAccessDto.Timeout.class, dtoCategories())
                     .registerType(TubeAccess.class, dtoCategories())
-                    // PR3 — the Google-connect / subscriptions JSON DTOs + entities.
+                    // PR3 — the Google-connect / subscriptions JSON DTOs + link entity.
                     .registerType(TubeGoogleDto.AuthorizeUrl.class, dtoCategories())
                     .registerType(TubeGoogleDto.ConnectStatus.class, dtoCategories())
                     .registerType(TubeGoogleDto.Subscription.class, dtoCategories())
                     .registerType(TubeGoogleDto.SubscriptionList.class, dtoCategories())
                     .registerType(TubeGoogleDto.SyncResult.class, dtoCategories())
                     .registerType(TubeGoogleLink.class, dtoCategories())
+                    // PR4 — the download work-queue + content model JSON/entity records.
+                    .registerType(TubeDownloadDto.Job.class, dtoCategories())
+                    .registerType(TubeDownloadDto.JobList.class, dtoCategories())
+                    .registerType(TubeDownloadDto.ClaimRequest.class, dtoCategories())
+                    .registerType(TubeDownloadDto.ReportRequest.class, dtoCategories())
+                    .registerType(TubeDownloadDto.BudgetRequest.class, dtoCategories())
+                    .registerType(TubeDownloadDto.Usage.class, dtoCategories())
+                    .registerType(DownloadJob.class, dtoCategories())
+                    .registerType(StorageUsage.class, dtoCategories())
                     .registerType(TubeSubscription.class, dtoCategories());
 
             hints.resources()

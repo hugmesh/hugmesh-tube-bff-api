@@ -17,26 +17,37 @@
               partial-unique on active(domain,user_subject,access_type), domain-scoped. The
               TubeAccessGuard DEFAULT-DENY enforcement reads this at request time.)
 
-        005 — tube_google_link  (PR3 — the per-(brand,user) Google OAuth youtube.readonly
-              connection. The crown-jewel REFRESH TOKEN is stored ONLY as an AES-256-GCM
-              ciphertext (refresh_token_ciphertext = base64(iv||ct||tag); no plaintext
-              column), encrypted by TokenCipher with the per-service DEK from ESO
-              secret/<brand>/tube-token-dek. owner+domain stamped server-side; partial
-              UNIQUE on the LIVE row (revoked_at IS NULL); reauth_required STOPS the sync
-              loop on a refresh failure; soft-revoke = audit.)
+        005a — tube_google_link  (PR3 — the per-(brand,user) Google OAuth youtube.readonly
+               connection. The crown-jewel REFRESH TOKEN is stored ONLY as an AES-256-GCM
+               ciphertext (refresh_token_ciphertext = base64(iv||ct||tag); no plaintext
+               column), encrypted by TokenCipher with the per-service DEK from ESO
+               secret/<brand>/tube-token-dek. owner+domain stamped server-side; partial
+               UNIQUE on the LIVE row (revoked_at IS NULL); reauth_required STOPS the sync
+               loop on a refresh failure; soft-revoke = audit.)
+
+        005b — tube_download_job + tube_storage_usage  (PR4 — the download WORK-QUEUE
+               (queued|claimed|downloading|done|failed|skipped state machine + dedup +
+               claim/report) + the per-user storage budget accounting. The BFF owns the
+               queue + budget; the yt-dlp runner image + the generator-gated polling
+               CronJob are a DEFERRED follow-up.)
 
         006 — tube_subscription (PR3 — the per-(brand,user) mirror of the user's subscribed
               YouTube channels; SubscriptionsSyncService pages subscriptions.list?mine=true
               and idempotently UPSERTs one row per channel. UNIQUE(domain,user_subject,
               channel_id).)
 
-      The tube_download_job work queue + tube_storage_usage budgets (PR4) are added in
-      later changesets. The changeSet numbering starts at 004 to match the owncast_grant
-      / wiki_access (004) overlay this is cloned from (001-003 in wiki-bff are the wiki
-      content store, which tube has no analogue of — use is grant-only).
+        007 — tube_subscription download fields (PR4 — adds latest_video_id,
+              latest_video_title, created_at, updated_at columns so the download work-queue
+              can use tube_subscription as its enqueue source.)
+
+      The changeSet numbering starts at 004 to match the owncast_grant / wiki_access (004)
+      overlay this is cloned from (001-003 in wiki-bff are the wiki content store, which
+      tube has no analogue of — use is grant-only).
     -->
 
     <include file="db/changelog/004-tube-access.xml"/>
     <include file="db/changelog/005-tube-google-link.xml"/>
+    <include file="db/changelog/005-tube-download-queue.xml"/>
     <include file="db/changelog/006-tube-subscription.xml"/>
+    <include file="db/changelog/007-tube-subscription-download-fields.xml"/>
 </databaseChangeLog>
