@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.29.xsd">
+
+    <!--
+      Tube BFF schema (the may-use GOVERNANCE plane). Liquibase runs over a JDBC
+      datasource (Liquibase has no R2DBC runner); all runtime data access goes through
+      R2DBC.
+
+        004 — tube_access   (PR2 — the use grant/timeout/ban OVERLAY; desired-state
+              CLONED from the owncast-bff owncast_grant (004) overlay — itself cloned from
+              the wiki-bff wiki_access (004) — swapping broadcast->use: state active->revoked
+              never deleted=audit, expires_at NULL=permanent / future=timeout-auto-restore,
+              partial-unique on active(domain,user_subject,access_type), domain-scoped. The
+              TubeAccessGuard DEFAULT-DENY enforcement reads this at request time.)
+
+      The tube_google_link (Google OAuth refresh-token store) + tube_subscription +
+      tube_download_job work queue + tube_storage_usage budgets (PR3/PR4) are added in
+      later changesets. The changeSet numbering starts at 004 to match the owncast_grant
+      / wiki_access (004) overlay this is cloned from (001-003 in wiki-bff are the wiki
+      content store, which tube has no analogue of — use is grant-only).
+    -->
+
+    <include file="db/changelog/004-tube-access.xml"/>
+</databaseChangeLog>
