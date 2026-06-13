@@ -12,3 +12,14 @@ spring:
       - org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration
   liquibase:
     enabled: false
+
+# TEST-ONLY non-secret keys so the context starts (TokenCipher / GoogleConnectState
+# fail-closed on a missing/short key at construction). These are deterministic,
+# obviously-fake values for CI ONLY — NOT secrets, NOT used in any deployed brand
+# (prod sources tube.google.* from ESO/Vault). DEK = base64(32 bytes 0x00..0x1f);
+# state HMAC key = base64(24 bytes 0x20..0x37). The Web-client creds + redirect stay
+# blank — no slice test calls Google (GoogleApiClient is mocked).
+tube:
+  google:
+    dek: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+    state-hmac-key: "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3"
