@@ -1,0 +1,152 @@
+package systems.snapdragon.tubebff.media;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
+import systems.snapdragon.tubebff.security.Roles;
+import systems.snapdragon.tubebff.web.ApiException;
+
+import java.time.Instant;
+import java.util.regex.Pattern;
+
+/**
+ * The media URL signing surface — generates short-TTL HMAC-signed URLs that authorise
+ * a specific user to stream a specific piece of content from the tube-media Nginx
+ * sidecar.
+ *
+ * <p><b>Two-wall owner check.</b>
+ * <ol>
+ *   <li><em>Wall 1 (gateway)</em> — the fe-gateway route-access gate: only principals
+ *       holding {@code ROLE_TUBE} can reach {@code /bff/tube/**} at all.</li>
+ *   <li><em>Wall 2 (this controller)</em> — the path must embed the calling user's own
+ *       {@code /<domain>/<subject>/} prefix. A path that embeds a different user or a
+ *       different brand is rejected 403 here — so user A can never obtain a signed URL
+ *       for user B's content.</li>
+ * </ol>
+ *
+ * <p><b>Path safety.</b> The path is validated against a strict allowlist pattern
+ * ({@link #PATH_PATTERN}) that excludes {@code ..}, {@code //}, and any non-word
+ * character beyond {@code /}, {@code .}, and {@code -}. A path that does not match is
+ * rejected 400 so path traversal attempts never reach the signing step.
+ *
+ * <p><b>Route.</b> Mounted under {@code /bff/tube/media/**} — inside the
+ * {@code .authenticated()} floor declared in
+ * {@link systems.snapdragon.tubebff.config.SecurityConfig}. The method-level
+ * {@code @PreAuthorize("isAuthenticated()")} is defence-in-depth.
+ */
+@Tag(name = "Tube Media Signing",
+        description = "Short-TTL HMAC-signed media URLs for the tube-media Nginx sidecar. "
+                + "Owner two-wall: ROLE_TUBE at gateway (wall 1) + path owner==jwt.subject "
+                + "(wall 2). Signed URL binds user, domain, path, and expiry; TTL = 5 min.")
+@RestController
+@RequestMapping("/bff/tube/media")
+public class TubeMediaController {
+
+    /**
+     * The authenticated floor for the media signing surface.
+     * Wall 1 (ROLE_TUBE) is enforced by the gateway; wall 2 (owner check) is in the handler body.
+     */
+    private static final String AUTHENTICATED = "isAuthenticated()";
+
+    /**
+     * Allowlist pattern for path segments.
+     *
+     * <p>Rules enforced:
+     * <ul>
+     *   <li>Each segment matches [a-zA-Z0-9._-]+ (no special characters, no empty segments,
+     *       no dot-dot sequences).</li>
+     *   <li>Negative lookaheads reject // (two adjacent slashes) and .. (dot-dot traversal)
+     *       anywhere in the string as belt-and-suspenders on top of the character class.</li>
+     *   <li>The path must have at least three segments: /domain/subject/rest...
+     *       Paths with only one or two segments are rejected as malformed.</li>
+     * </ul>
+     */
+    private static final Pattern PATH_PATTERN = Pattern.compile(
+            "^(?!.*//)(?!.*\\.\\.)((/[a-zA-Z0-9._-]+){2})(/[a-zA-Z0-9._-]+)+$");
+
+    private final TubeMediaTokenService tokenService;
+
+    public TubeMediaController(TubeMediaTokenService tokenService) {
+        this.tokenService = tokenService;
+    }
+
+    /**
+     * Sign a short-TTL media access URL.
+     *
+     * <p>Returns {@code {"url": "/tube/content/<path>?sig=...&exp=...&sub=...&domain=...",
+     * "expiresAt": "<ISO-8601>"}} on success.
+     *
+     * <p>Error responses:
+     * <ul>
+     *   <li>{@code 400} — path does not match the allowlist pattern (includes path
+     *       traversal attempts or malformed paths).</li>
+     *   <li>{@code 403} — the path's embedded domain or subject does not match the
+     *       calling principal's JWT domain / subject (cross-user/cross-brand attempt).</li>
+     * </ul>
+     *
+     * @param path the content path to sign, e.g. {@code /acme/alice/videos/vid.mp4}
+     * @param auth the Spring Security authentication carrying the JWT
+     */
+    @Operation(summary = "Sign a short-TTL (5 min) media URL for the calling user's own content. "
+            + "Path must start with /<domain>/<subject>/. Returns signed URL + expiresAt. "
+            + "403 if path owner != jwt.subject; 400 if path is malformed.")
+    @PreAuthorize(AUTHENTICATED)
+    @GetMapping("/sign")
+    public Mono<ResponseEntity<TubeMediaDto.SignedUrl>> sign(
+            @RequestParam String path, Authentication auth) {
+
+        // ── path safety (wall 2a) ─────────────────────────────────────────────
+        if (!PATH_PATTERN.matcher(path).matches()) {
+            return Mono.error(ApiException.badRequest(
+                    "path is invalid — must match /<domain>/<subject>/... with no .. or //"));
+        }
+
+        // ── extract domain + subject from the path ────────────────────────────
+        // Path has been validated to have the shape /seg1/seg2/rest
+        String[] parts = path.split("/", 4);   // ["", domain, subject, rest]
+        String pathDomain = parts[1];
+        String pathSubject = parts[2];
+
+        // ── resolve principal's domain + subject ──────────────────────────────
+        // Domain is read from the already-stamped DOMAIN_<x> authority (emitted by
+        // CasdoorAuthorities at JWT validation time) — the same authority the rest of the
+        // BFF reads via Roles.domainOf(authorities).  Reading from the authority (rather
+        // than re-deriving from the issuer via DomainRegistry) keeps this controller free
+        // of the DomainRegistry dependency and is consistent with how TubeAccessGuard
+        // reads isSuperadmin from authorities.  Fail-closed: Roles.domainOf returns null
+        // on zero or >1 DOMAIN_ authorities (injection guard), which the check below rejects.
+        if (!(auth.getPrincipal() instanceof Jwt jwt)) {
+            // Non-JWT principal (should not reach here in production, but fail-closed).
+            return Mono.error(ApiException.forbidden("JWT principal required for media signing"));
+        }
+        String jwtSubject = jwt.getSubject();
+        String jwtDomain  = Roles.domainOf(auth.getAuthorities());
+
+        // ── owner two-wall (wall 2b) ──────────────────────────────────────────
+        // Domain check: the path must embed the calling user's own brand.
+        if (jwtDomain == null || !jwtDomain.equals(pathDomain)) {
+            return Mono.error(ApiException.forbidden(
+                    "path domain does not match the caller's brand"));
+        }
+        // Subject check: the path must embed the calling user's own subject.
+        if (jwtSubject == null || !jwtSubject.equals(pathSubject)) {
+            return Mono.error(ApiException.forbidden(
+                    "path subject does not match the caller's JWT subject"));
+        }
+
+        // ── sign ──────────────────────────────────────────────────────────────
+        String qs = tokenService.sign(jwtSubject, jwtDomain, path);
+        String url = "/tube/content" + path + "?" + qs;
+        Instant expiresAt = Instant.now().plusMillis(TubeMediaTokenService.TTL_MILLIS);
+
+        return Mono.just(ResponseEntity.ok(new TubeMediaDto.SignedUrl(url, expiresAt)));
+    }
+}
