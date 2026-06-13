@@ -23,3 +23,12 @@ tube:
   google:
     dek: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
     state-hmac-key: "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3"
+
+# TEST-ONLY non-secret media URL-signing key so the Spring context starts.
+# TubeMediaTokenService (PR3 signed media URLs) reads ${TUBE_MEDIA_KEY} and FAILS CLOSED
+# (IllegalStateException) at construction when it is absent — so the context-load test
+# needs SOME value present. This is the same deterministic, obviously-fake fixture the
+# TubeMediaTokenServiceTest unit test uses (base64 of the 32 ASCII bytes
+# "01234567890123456789012345678901"): NOT a secret, NOT used in any deployed brand
+# (prod injects the real 32-byte key via ESO secret/<brand> -> TUBE_MEDIA_KEY).
+TUBE_MEDIA_KEY: "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="
