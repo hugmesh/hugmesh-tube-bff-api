@@ -1,35 +1,118 @@
 # snapdragon-tube-bff-api
 
-Tube BFF — the access governance plane for the **LocalTube** video OPTIONAL SERVICE
-(self-hosted personal YouTube archival: a user connects Google, their subscribed
+Tube BFF — the access-governance + control plane for the **LocalTube** video OPTIONAL
+SERVICE (self-hosted personal YouTube archival: a user connects Google, their subscribed
 channels sync to a DB, and yt-dlp downloads new videos on a schedule for owner-private
 in-platform viewing). Twin of `snapdragon-owncast-bff-api` / `snapdragon-wiki-bff-api`
 (Java 21 WebFlux + R2DBC Postgres + Liquibase + Casdoor JWT resource server, package
-`systems.snapdragon.tubebff`).
+`systems.snapdragon.tubebff`, artifact `tube-bff` 0.1.0, Spring Boot 3.5.5).
+
+> **State convention:** ✅ shipped (on `main`) · 🚧 in-flight (open branch/PR) ·
+> 🔭 planned (design only, no code in this repo). See the
+> [Roadmap / not yet in this repo](#roadmap--not-yet-in-this-repo) section.
 
 ## What this BFF owns
 
-This service is the **may-use governance plane** for the tube service, NOT the media
-plane. The downloaded content lives on a per-domain content PVC served range/HLS through
-a SEPARATE be-gateway route + a tube-media serving sidecar (PR5), and the
-Google-connect/subs-sync (PR3) + the yt-dlp downloader CronJob + work queue (PR4) are
-separate components. This BFF owns the `tube_access` governance table — the
-per-principal **may-use** grant/timeout/ban overlay an ADMIN curates so that, on top of
-the `ROLE_TUBE` base role, an admin decides which of their domain's users may actually
-use the tube service.
+This service is the **control plane** for the tube service — it owns the may-use
+governance overlay PLUS the user-facing connect/list/queue/sign surfaces. It does NOT
+serve media bytes and does NOT run yt-dlp. Concretely, on `main` today this BFF owns:
 
-The browser→governance path is:
+- ✅ the `tube_access` **governance overlay** — the per-principal may-use grant/timeout/ban
+  table an ADMIN curates on top of the base `ROLE_TUBE` role;
+- ✅ the **Google OAuth link** (`youtube.readonly`) + the **subscription mirror** — the
+  refresh token is stored only as an AES-256-GCM ciphertext (no plaintext column);
+- ✅ the **download work-queue** + **per-user storage budgets** — the
+  queued→claimed→downloading→done/failed/skipped state machine, dedup, and
+  claim/report endpoints;
+- ✅ the **media-URL signing** surface — short-TTL HMAC-signed URLs that authorise a
+  byte fetch (owner two-wall enforced here).
 
+The media **bytes** are still served by a separate per-domain tube-media Nginx sidecar
+(🔭 not in this repo) over a `be-gateway /tube/content/**` route, and the yt-dlp runner
+image + polling CronJob that drain the work-queue are still external (🔭 not in this
+repo) — see [Roadmap](#roadmap--not-yet-in-this-repo). What lives HERE are the queue +
+claim/report + signed-URL **control** surfaces, not the byte plane or the downloader.
+
+### Request flows
+
+The browser→governance/control path (everything `/bff/tube/**` is THIS BFF, behind the
+`fe-gateway`):
+
+```mermaid
+flowchart LR
+    browser["browser"]
+    fe["fe-gateway<br/>/bff/tube/**"]
+    bff["tube-bff (this repo)"]
+    pg[("tube_access / tube_google_link /<br/>tube_subscription / tube_download_job /<br/>tube_storage_usage")]
+
+    browser --> fe --> bff --> pg
 ```
-browser -> fe-gateway /bff/tube/** -> THIS BFF -> tube_access Postgres overlay
-browser -> be-gateway /tube/media/** (range/HLS) -> tube-media sidecar (per-domain content PVC, PR5)
+
+The media **byte** path is a two-step signed flow — the signing hop is a call to THIS
+BFF first, then the byte fetch goes to the separate sidecar:
+
+```mermaid
+flowchart LR
+    browser["browser"]
+    fe["fe-gateway<br/>/bff/tube/media/sign"]
+    bff["tube-bff (this repo)<br/>owner two-wall + HMAC sign"]
+    be["be-gateway<br/>/tube/content/**"]
+    sidecar["tube-media Nginx sidecar<br/>(per-domain content PVC)<br/>verifies HMAC / exp / sub / domain"]
+
+    browser -->|"1: GET /bff/tube/media/sign?path=..."| fe --> bff
+    bff -.->|"returns signed<br/>/tube/content/&lt;domain&gt;/&lt;subject&gt;/...<br/>?sig=&amp;exp=&amp;sub=&amp;domain="| browser
+    browser -->|"2: GET /tube/content/... (range/HLS)"| be --> sidecar
+
+    classDef planned stroke-dasharray:4 3
+    class be,sidecar planned
 ```
 
-## PR2 (this PR) — the `tube_access` overlay + `TubeAccessGuard`
+> Nodes drawn with a dashed border (`be-gateway /tube/content` route + the tube-media
+> sidecar) are 🔭 **planned** — not in this repo. The signing hop (`/bff/tube/media/sign`)
+> is ✅ shipped here.
 
-PR2 is the BFF **skeleton + the use grant/timeout/ban overlay**, cloned EXACTLY from the
-owncast-bff `owncast_grant` (004) overlay (which itself cloned the wiki-bff `wiki_access`),
-swapping `broadcast` → `use`:
+## Capabilities (what is on `main`)
+
+| Area | Status | Package | Notes |
+|------|--------|---------|-------|
+| `tube_access` overlay + `TubeAccessGuard` (default-deny) | ✅ shipped (PR2) | `access` | grant/timeout/ban/restore; ban > grant; SUPERADMIN ban-exempt |
+| Google OAuth connect + subscriptions sync | ✅ shipped (PR3) | `google` | `youtube.readonly`; refresh token AES-256-GCM at rest via `TokenCipher` |
+| Signed short-TTL HMAC media URLs + owner two-wall | ✅ shipped (PR5) | `media` | signs `/tube/content/...` URLs; `/bff/tube/media/verify` reserved for the sidecar `auth_request` |
+| Download work-queue + storage budgets | ✅ shipped (PR4) | `download` | claim/report state machine; per-user budget cap |
+| GitLab CI: test → build:image → pentest | ✅ shipped | — | SCA + ZAP DAST baseline (incl. nuclei) via the shared harness; `make pentest` mirrors it |
+
+## API surface (route groups)
+
+All routes are mounted under `/bff/tube` (reached only through the `fe-gateway`; the base
+`ROLE_TUBE` gateway route-access is the floor before any of these handlers run).
+
+**Access governance** — `access/TubeAccessController`
+- `POST /bff/tube/admin/access/grant` · `.../timeout` · `.../ban` (ADMIN | SUPERADMIN, own-brand)
+- `DELETE /bff/tube/admin/access/{accessType}/{userSubject}` — restore (ADMIN | SUPERADMIN)
+- `GET /bff/tube/superadmin/access` — list (SUPERADMIN)
+- `GET /bff/tube/superadmin/access/{userSubject}/history` (SUPERADMIN)
+
+**Google connect + subscriptions** — `google/GoogleConnectController`, `google/TubeSubscriptionsController`
+- `GET /bff/tube/google-connect/{status,authorize,callback}` · `POST /bff/tube/google-connect/disconnect`
+- `GET /bff/tube/subscriptions` · `POST /bff/tube/subscriptions/sync`
+  (authenticated + a live `use` grant; SUPERADMIN exempt)
+
+**Media signing** — `media/TubeMediaController`
+- `GET /bff/tube/media/sign` — authenticated; owner two-wall (path `sub` must equal the
+  caller's JWT subject and brand) → returns a signed `/tube/content/<domain>/<subject>/...`
+  URL + `expiresAt`
+
+**Downloads + budgets** — `download/TubeDownloadController`, `download/TubeDownloadWorkerController`, `download/TubeStorageBudgetController`
+- `GET /bff/tube/downloads` · `POST /bff/tube/downloads` — authenticated (owner-scoped enqueue/list)
+- `POST /bff/tube/internal/download-jobs/{claim,report}` — **`ROLE_TUBE_WORKER` only**
+  (a service/mTLS principal for the future yt-dlp CronJob; deliberately OUTSIDE the
+  human role hierarchy — no USER/MOD/ADMIN/SUPERADMIN reaches it)
+- `POST /bff/tube/admin/storage-budget` — set a user's storage budget cap (ADMIN | SUPERADMIN, own-brand)
+
+## The `tube_access` overlay + `TubeAccessGuard` (✅ PR2)
+
+The use grant/timeout/ban overlay was cloned EXACTLY from the owncast-bff `owncast_grant`
+(004) overlay (which itself cloned the wiki-bff `wiki_access`), swapping `broadcast` → `use`:
 
 - **`tube_access`** (Liquibase `004-tube-access.xml`) — the desired-state table:
   `access_type ∈ {use, banned}`, `state ∈ {active, revoked}` (never deleted = audit),
@@ -42,9 +125,6 @@ swapping `broadcast` → `use`:
   else **403**. The base `ROLE_TUBE` is the gateway route-access floor + the
   connect/view-own surface — it does NOT by itself confer use; an admin's `use` grant
   is the only thing that lifts a user above the default-deny floor.
-- **`TubeAccessController`** —
-  `/bff/tube/admin/access` grant/timeout/ban/restore (ADMIN | SUPERADMIN) +
-  `/bff/tube/superadmin/access` list/history (SUPERADMIN).
 - **`ROLE_TUBE`** — the base service role (sibling of `ROLE_OWNCAST` / `ROLE_WIKI` /
   `ROLE_FORUM`).
 
@@ -52,17 +132,83 @@ swapping `broadcast` → `use`:
 
 - **SUPERADMIN** — `TUBE_MANAGE`; service enable per-domain (+GPU-node check);
   cross-domain; exempt from ban.
-- **ADMIN (own brand)** — `TUBE_GOVERN`: grant/timeout/ban/restore may-use (quota /
-  retention / allow-deny-users / cadence are the wider PR4/PR8 admin surface).
-- **MOD** — moderation lives in mod-bff (`tube.*` ModActionType, later PR) via the
-  derived `ROLE_TUBE_MOD` (MOD ∩ TUBE).
-- **USER** — `ROLE_TUBE` + a `use` grant (default-deny): connect Google + view-own
-  (owner-scoped). Google-connect / subs-sync / yt-dlp download / owner-private viewing
-  are PR3–PR5.
+- **ADMIN (own brand)** — `TUBE_GOVERN`: grant/timeout/ban/restore may-use + set storage
+  budgets (✅). The wider quota / retention / allow-deny-users / cadence admin surface is
+  🔭 the PR8 roadmap — only the storage-budget `POST` is shipped today.
+- **MOD** — 🔭 moderation lives in mod-bff (`tube.*` ModActionType, later PR) via the
+  derived `ROLE_TUBE_MOD` (MOD ∩ TUBE); not in this repo.
+- **USER** — `ROLE_TUBE` + a `use` grant (default-deny): connect Google + sync
+  subscriptions + enqueue/list owner-scoped downloads + obtain owner-scoped signed media
+  URLs (✅).
+- **`ROLE_TUBE_WORKER`** — a non-human service/mTLS principal (the future yt-dlp CronJob)
+  that may claim/report download jobs ONLY; deliberately outside the human role hierarchy.
 
-DEFAULT-OFF (ships dark), GPU-pinned (x86 + GPU). The `tube_google_link` +
-`tube_subscription` + `tube_download_job` + `tube_storage_usage` tables, the downloader
-CronJob, the media-serving sidecar, the `snapdragon-tube-ui` remote, and the generator
-devops land in later PRs (PR3–PR9).
+## Schema (Liquibase changelogs on `main`)
 
-Build + test: `./mvnw -DskipITs test`. CI = GitLab (`.gitlab-ci.yml`).
+Liquibase runs over a JDBC datasource (Liquibase has no R2DBC runner); all runtime data
+access goes through R2DBC. Numbering starts at 004 to match the `owncast_grant` /
+`wiki_access` (004) overlay this is cloned from (001–003 in wiki-bff are the wiki content
+store, which tube has no analogue of — use is grant-only). Mirrors the comment block in
+`db.changelog-master.xml`:
+
+- **004 `tube-access`** — the use grant/timeout/ban overlay (PR2).
+- **005a `tube-google-link`** — `tube_google_link`: per-(brand,user) Google OAuth
+  `youtube.readonly` connection; refresh token stored only as AES-256-GCM ciphertext
+  (`refresh_token_ciphertext = base64(iv||ct||tag)`), partial-UNIQUE on the live row,
+  soft-revoke=audit (PR3).
+- **005b `tube-download-queue`** — `tube_download_job` (the queued→claimed→downloading→
+  done/failed/skipped work-queue + dedup + claim/report) + `tube_storage_usage`
+  (per-user budget accounting) (PR4).
+- **006 `tube-subscription`** — `tube_subscription`: per-(brand,user) mirror of subscribed
+  YouTube channels, `UNIQUE(domain, user_subject, channel_id)` (PR3).
+- **007 `tube-subscription-download-fields`** — adds `latest_video_id`,
+  `latest_video_title`, `created_at`, `updated_at` so the work-queue can use
+  `tube_subscription` as its enqueue source (PR4).
+
+## CI
+
+CI = GitLab (`.gitlab-ci.yml`). The GitHub repo is pull-mirrored into in-cluster GitLab
+(`mirror_trigger_builds=true`), so the pipeline runs on push / mirror-sync. Stages:
+
+- **`test:unit`** — `./mvnw -B -DskipITs test` (unit/slice tests; keeps a broken
+  overlay/guard from shipping an image).
+- **`build:image`** — builds + pushes the container image on the privileged x86 runner
+  (immutable SHA/tag + a moving branch tag). Images carry NO keys.
+- **`pentest`** — ✅ the continuous-OWASP stage per the platform pen-test standard:
+  `pentest:sca` (OWASP Dependency-Check SCA) + `pentest:dast` (authenticated ZAP DAST
+  baseline incl. nuclei probes), both `extends:` the centralized `.pentest-*` hidden jobs
+  in `snapdragon-generator`'s `tests/pentest/ci/pentest-stage.gitlab-ci.yml`. Currently
+  `allow_failure: true` (report-and-fix posture). `make pentest` runs the same
+  SCA + DAST self-scan locally.
+
+> k6 load testing is part of the platform pen-test standard but is not wired into THIS
+> repo's pipeline yet (SCA + DAST baseline are).
+
+Build + test locally: `./mvnw -DskipITs test`.
+
+## Roadmap / not yet in this repo
+
+DEFAULT-OFF (ships dark), GPU-pinned (x86 + GPU). The following are 🔭 planned /
+🚧 in-flight and are NOT shipped in this repo — this BFF owns the control surfaces they
+plug into, but the components themselves live elsewhere:
+
+- 🔭 **yt-dlp downloader runner image + generator-gated polling CronJob** that drains the
+  `tube_download_job` work-queue via the `ROLE_TUBE_WORKER` claim/report endpoints. The
+  queue + claim/report + storage budgets are ✅ shipped here; the runner/CronJob are a
+  deferred follow-up.
+- 🔭 **tube-media Nginx serving sidecar + `be-gateway /tube/content/**` route** that
+  verifies the HMAC-signed URLs this BFF issues (via a `auth_request` to
+  `/bff/tube/media/verify`). The signing is ✅ shipped here; the byte-serving sidecar is
+  an external component.
+- 🔭 **`snapdragon-tube-ui` native-federation remote** (DB-hosted federated Angular
+  module) consuming these BFF endpoints.
+- 🔭 **Generator devops for the tube optional service** — the deployment story:
+  DEFAULT-OFF / ships-dark, GPU-pinned (x86 + GPU) per-domain enable gated on a
+  superadmin `TUBE_MANAGE` + a GPU-node check.
+- 🔭 **mod-bff tube moderation surface** — `tube.*` ModActionType + the derived
+  `ROLE_TUBE_MOD` (MOD ∩ TUBE); lands in mod-bff, not here.
+- 🔭 **PR8 wider admin surface** — quota / retention / allow-deny-users / cadence
+  governance. Only the storage-budget `POST` is shipped today.
+- 🚧 **Notifications EXTERNAL channels** (platform-wide, in-flight) — Matrix DM / Akkoma
+  feed / phpBB / email adapters on top of the in-app notifications MVP; the tube service
+  would emit account/infra events through that subsystem.
