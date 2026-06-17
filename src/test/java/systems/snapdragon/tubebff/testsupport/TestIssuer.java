@@ -23,9 +23,8 @@ import java.util.UUID;
 
 /**
  * REUSABLE multi-issuer test fixture — the cornerstone of the copyable multi-issuer
- * security-slice pattern established by snapdragon-gateway PR #34
- * ({@code TestIssuer} + {@code SecuritySliceSupport}). MIRRORED (logic-identical) from
- * the adversarially-verified-safe snapdragon-gateway
+ * security-slice pattern ({@code TestIssuer} + {@code SecuritySliceSupport}). COPIED
+ * VERBATIM (logic-identical) from the adversarially-verified-safe snapdragon-gateway
  * {@code systems.snapdragon.gateway.testsupport.TestIssuer} (package adjusted only).
  *
  * <p>Each {@code TestIssuer} stands up a tiny in-process HTTP server (JDK
@@ -43,9 +42,9 @@ import java.util.UUID;
  * (issuer=domain). {@link #mint(String, List)} mints an RSA-signed JWT whose
  * {@code iss} is this server's issuer URI — so a token minted by issuer A is
  * cryptographically valid ONLY against issuer A's manager, which is exactly the
- * cross-brand isolation the wave-2 controller slice asserts: a brand-X token's
- * issuer-derived {@code DOMAIN_brandx} can never become {@code DOMAIN_brandy}, even
- * when the token carries a forged {@code permissions:["DOMAIN_brandy"]} claim.
+ * cross-brand isolation the slice asserts: a brand-X token's issuer-derived
+ * {@code DOMAIN_brandx} can never become {@code DOMAIN_brandy}, even when the token
+ * carries a forged {@code permissions:["DOMAIN_brandy"]} claim.
  *
  * <p>Deterministic: a fresh RSA keypair per instance, fixed loopback host, OS-picked
  * port. {@link AutoCloseable} so a try-with-resources / {@code @AfterEach} stops the
