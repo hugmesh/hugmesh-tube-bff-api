@@ -83,8 +83,7 @@ class MultiIssuerSecuritySliceTest extends SecuritySliceSupport {
         // Registry trusts ONLY brandX + brandY. rogue is deliberately omitted.
         DomainRegistry registry = new DomainRegistry(
                 brandX.issuerUri(),
-                brandX.issuerUri() + "=brandx," + brandY.issuerUri() + "=brandy",
-                "");
+                brandX.issuerUri() + "=brandx," + brandY.issuerUri() + "=brandy");
         assertThat(registry.isMultiIssuer())
                 .as("two trusted issuers => multi-issuer mode active")
                 .isTrue();
@@ -176,16 +175,18 @@ class MultiIssuerSecuritySliceTest extends SecuritySliceSupport {
     @Test
     void tamperedSignature_failsClosed_401() {
         String token = brandX.mint("alice", List.of("tube"));
-        // Flip the last char of the signature segment -> signature no longer verifies.
         int lastDot = token.lastIndexOf('.');
-        char last = token.charAt(token.length() - 1);
-        String flipped = token.substring(0, token.length() - 1)
-                + (last == 'A' ? 'B' : 'A');
-        // Guard: ensure we actually changed something in the signature segment.
         assertThat(lastDot).isGreaterThan(0);
+        String header = token.substring(0, lastDot + 1);
+        String signature = token.substring(lastDot + 1);
+        // Reverse the signature segment so it can no longer verify against the key.
+        // (A single-char flip can be a no-op when it only touches base64url padding
+        // bits; reversing the whole 2048-bit RSA signature guarantees a mismatch.)
+        String tampered = header + new StringBuilder(signature).reverse();
+        assertThat(tampered).isNotEqualTo(token);
 
         client.get().uri("/bff/tube/whoami")
-                .headers(h -> h.setBearerAuth(flipped))
+                .headers(h -> h.setBearerAuth(tampered))
                 .exchange()
                 .expectStatus().isUnauthorized();
     }
