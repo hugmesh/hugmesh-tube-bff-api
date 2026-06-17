@@ -63,6 +63,32 @@ abstract class SecuritySliceSupport {
                 .build();
     }
 
+    /**
+     * As {@link #sliceClient}, but ALSO registers the given {@code @RestControllerAdvice}
+     * instances on the bound controller so a controller-body {@code Mono.error(ApiException)}
+     * is rendered as its mapped status + {@code {"error":...}} body (otherwise an unhandled
+     * {@code ApiException} surfaces as a raw 500 in a standalone {@code bindToController}
+     * setup, which has no application {@code @ControllerAdvice}). Used by the media slice,
+     * which must drive the controller BODY (the owner two-wall 403/400) through the real
+     * security chain. The existing {@link #sliceClient} is left unchanged for the
+     * gate-only slices that never reach a controller-body {@code ApiException}.
+     */
+    static WebTestClient sliceClientWithAdvice(
+            DomainRegistry registry,
+            ObjectProvider<ReactiveAuthenticationManagerResolver<ServerWebExchange>> tenantResolver,
+            Object[] controllerAdvice,
+            Object... controllers) {
+
+        SecurityConfig config = new SecurityConfig(registry, tenantResolver);
+        SecurityWebFilterChain chain = config.filterChain(ServerHttpSecurity.http());
+        WebFilterChainProxy securityFilter = new WebFilterChainProxy(chain);
+
+        return WebTestClient.bindToController(controllers)
+                .controllerAdvice(controllerAdvice)
+                .webFilter(securityFilter)
+                .build();
+    }
+
     /** An {@link ObjectProvider} that yields the given value from
      *  {@code getIfAvailable()} (what {@code SecurityConfig} calls). */
     @SuppressWarnings("unchecked")
