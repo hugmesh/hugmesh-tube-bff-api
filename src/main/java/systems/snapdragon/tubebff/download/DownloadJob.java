@@ -1,5 +1,11 @@
 package systems.snapdragon.tubebff.download;
 
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.domain.Persistable;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
+
 import java.time.Instant;
 
 /**
@@ -30,22 +36,37 @@ import java.time.Instant;
  *       {@code tube_storage_usage}, the path locates the file on the content PVC.</li>
  * </ul>
  */
+@Table("tube_download_job")
 public record DownloadJob(
-        String id,
-        String domain,
-        String userSubject,
-        String channelId,
-        String videoId,
-        String title,
-        String state,
-        String claimedBy,
-        Instant claimedAt,
-        int attempts,
-        String lastError,
-        Long bytes,
-        String contentPath,
-        Instant createdAt,
-        Instant updatedAt) {
+        @Id @Column("id") String id,
+        @Column("domain") String domain,
+        @Column("user_subject") String userSubject,
+        @Column("channel_id") String channelId,
+        @Column("video_id") String videoId,
+        @Column("title") String title,
+        @Column("state") String state,
+        @Column("claimed_by") String claimedBy,
+        @Column("claimed_at") Instant claimedAt,
+        @Column("attempts") int attempts,
+        @Column("last_error") String lastError,
+        @Column("bytes") Long bytes,
+        @Column("content_path") String contentPath,
+        @Column("created_at") Instant createdAt,
+        @Column("updated_at") Instant updatedAt) implements Persistable<String> {
+
+    @Override
+    public String getId() {
+        return id;
+    }
+
+    /** Always an INSERT (app-generated UUID id). The queue's lifecycle transitions are
+     *  derived modifying CASes, never a {@code save()} of a read row, so {@code save()}
+     *  is only ever a fresh insert. */
+    @Override
+    @Transient
+    public boolean isNew() {
+        return true;
+    }
 
     /** Enqueued, awaiting a worker claim. */
     public static final String STATE_QUEUED = "queued";

@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.data.r2dbc.DataR2dbcTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -48,7 +47,7 @@ class DownloadJobServiceTest {
 
     @Autowired DownloadJobRepository jobs;
     @Autowired SubscriptionRepository subs;
-    @Autowired DatabaseClient db;
+    @Autowired StorageUsageR2dbcRepository usageRepo;
 
     private static final long DEFAULT_BUDGET = 1000L;
 
@@ -68,7 +67,7 @@ class DownloadJobServiceTest {
 
     @BeforeEach
     void setUp() {
-        usage = new StorageUsageService(db, DEFAULT_BUDGET);
+        usage = new StorageUsageService(usageRepo, DEFAULT_BUDGET);
         service = new DownloadJobService(jobs, subs, usage, PD);
     }
 

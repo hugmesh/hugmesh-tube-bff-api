@@ -1,5 +1,11 @@
 package systems.snapdragon.tubebff.google;
 
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.domain.Persistable;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
+
 import java.time.Instant;
 
 /**
@@ -11,18 +17,32 @@ import java.time.Instant;
  * cleartext token, and neither does any DTO crossing the HTTP boundary. {@code domain} +
  * {@code userSubject} are stamped server-side (a personal connect is single-domain).
  */
+@Table("tube_google_link")
 public record TubeGoogleLink(
-        String id,
-        String domain,
-        String userSubject,
-        String googleSub,
-        String googleEmail,
-        String refreshTokenCiphertext,
-        String dekId,
-        String scopes,
-        Instant connectedAt,
-        boolean reauthRequired,
-        Instant revokedAt) {
+        @Id @Column("id") String id,
+        @Column("domain") String domain,
+        @Column("user_subject") String userSubject,
+        @Column("google_sub") String googleSub,
+        @Column("google_email") String googleEmail,
+        @Column("refresh_token_ciphertext") String refreshTokenCiphertext,
+        @Column("dek_id") String dekId,
+        @Column("scopes") String scopes,
+        @Column("connected_at") Instant connectedAt,
+        @Column("reauth_required") boolean reauthRequired,
+        @Column("revoked_at") Instant revokedAt) implements Persistable<String> {
+
+    @Override
+    public String getId() {
+        return id;
+    }
+
+    /** Always an INSERT (app-generated UUID id). The soft-revoke + reauth-flag writes are
+     *  constant-{@code @Query} partial UPDATEs, never a {@code save()} of a read row. */
+    @Override
+    @Transient
+    public boolean isNew() {
+        return true;
+    }
 
     /** The LIVE connection has not been soft-revoked. */
     public boolean isLive() {

@@ -1,5 +1,11 @@
 package systems.snapdragon.tubebff.access;
 
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.domain.Persistable;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
+
 import java.time.Instant;
 
 /**
@@ -29,17 +35,36 @@ import java.time.Instant;
  *       SUPERADMIN acts cross-domain.</li>
  * </ul>
  */
+@Table("tube_access")
 public record TubeAccess(
-        String id,
-        String domain,
-        String userSubject,
-        String accessType,
-        String state,
-        String grantedBySubject,
-        String reason,
-        Instant createdAt,
-        Instant expiresAt,
-        Instant revokedAt) {
+        @Id @Column("id") String id,
+        @Column("domain") String domain,
+        @Column("user_subject") String userSubject,
+        @Column("access_type") String accessType,
+        @Column("state") String state,
+        @Column("granted_by_subject") String grantedBySubject,
+        @Column("reason") String reason,
+        @Column("created_at") Instant createdAt,
+        @Column("expires_at") Instant expiresAt,
+        @Column("revoked_at") Instant revokedAt) implements Persistable<String> {
+
+    @Override
+    public String getId() {
+        return id;
+    }
+
+    /**
+     * Always an INSERT. The store NEVER {@code save()}s a previously-read row — the
+     * one mutation ({@code active -> revoked}) is a derived modifying CAS, not a
+     * {@code save()} — so a {@code save()} call here is always a fresh app-generated-id
+     * insert. (R2DBC otherwise decides insert-vs-update by {@code @Id} nullness, which
+     * never works for an app-generated PK that is already populated.)
+     */
+    @Override
+    @Transient
+    public boolean isNew() {
+        return true;
+    }
 
     public static final String STATE_ACTIVE = "active";
     public static final String STATE_REVOKED = "revoked";

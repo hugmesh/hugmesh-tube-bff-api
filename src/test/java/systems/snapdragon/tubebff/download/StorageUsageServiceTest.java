@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.data.r2dbc.DataR2dbcTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.r2dbc.core.DatabaseClient;
 import systems.snapdragon.tubebff.support.TestDatabaseConfig;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Import(TestDatabaseConfig.class)
 class StorageUsageServiceTest {
 
-    @Autowired DatabaseClient db;
+    @Autowired StorageUsageR2dbcRepository usageRepo;
 
     /** Small default budget so the tests can fill it deterministically. */
     private static final long DEFAULT_BUDGET = 1000L;
@@ -42,7 +41,7 @@ class StorageUsageServiceTest {
 
     @BeforeEach
     void setUp() {
-        usage = new StorageUsageService(db, DEFAULT_BUDGET);
+        usage = new StorageUsageService(usageRepo, DEFAULT_BUDGET);
     }
 
     // ── USER-SITUATIONAL ──────────────────────────────────────────────────────

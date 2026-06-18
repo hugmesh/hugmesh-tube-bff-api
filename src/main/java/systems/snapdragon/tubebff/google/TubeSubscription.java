@@ -1,5 +1,11 @@
 package systems.snapdragon.tubebff.google;
 
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.domain.Persistable;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
+
 import java.time.Instant;
 
 /**
@@ -8,12 +14,26 @@ import java.time.Instant;
  * {@code domain} + {@code userSubject} scope it to the owning (brand,user); the
  * {@code channelId} is unique within that scope (the sync UPSERTs in place).
  */
+@Table("tube_subscription")
 public record TubeSubscription(
-        String id,
-        String domain,
-        String userSubject,
-        String channelId,
-        String channelTitle,
-        String thumbnailUrl,
-        Instant syncedAt) {
+        @Id @Column("id") String id,
+        @Column("domain") String domain,
+        @Column("user_subject") String userSubject,
+        @Column("channel_id") String channelId,
+        @Column("channel_title") String channelTitle,
+        @Column("thumbnail_url") String thumbnailUrl,
+        @Column("synced_at") Instant syncedAt) implements Persistable<String> {
+
+    @Override
+    public String getId() {
+        return id;
+    }
+
+    /** Always an INSERT (app-generated UUID id). The in-place sync refresh is a
+     *  constant-{@code @Query} partial UPDATE, never a {@code save()} of a read row. */
+    @Override
+    @Transient
+    public boolean isNew() {
+        return true;
+    }
 }

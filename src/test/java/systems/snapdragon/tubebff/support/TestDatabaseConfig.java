@@ -3,8 +3,10 @@ package systems.snapdragon.tubebff.support;
 import io.r2dbc.spi.ConnectionFactories;
 import io.r2dbc.spi.ConnectionFactory;
 import liquibase.integration.spring.SpringLiquibase;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.r2dbc.core.DatabaseClient;
 
@@ -73,5 +75,23 @@ public class TestDatabaseConfig {
     @Bean
     public DatabaseClient databaseClient(ConnectionFactory connectionFactory, SpringLiquibase liquibase) {
         return DatabaseClient.create(connectionFactory);
+    }
+
+    /**
+     * The {@link R2dbcEntityTemplate} the Spring Data R2DBC repositories' bootstrap needs
+     * ({@code entityOperations}). The {@code @DataR2dbcTest} slice tests get this from the
+     * slice's R2DBC data auto-config, so this bean is {@link ConditionalOnMissingBean} and
+     * only supplies one for the FULL-context smoke test
+     * ({@code TubeBffApplicationContextTest}), whose {@code application-test.yml}
+     * deliberately excludes {@code R2dbcDataAutoConfiguration} (no live Postgres in CI).
+     * The context test only proves wiring (no query runs), so the template's default
+     * converter is sufficient; the production timestamp converters live in
+     * {@code R2dbcConvertersConfig}.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public R2dbcEntityTemplate r2dbcEntityTemplate(ConnectionFactory connectionFactory,
+                                                   SpringLiquibase liquibase) {
+        return new R2dbcEntityTemplate(connectionFactory);
     }
 }

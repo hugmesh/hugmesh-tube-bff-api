@@ -1,5 +1,9 @@
 package systems.snapdragon.tubebff.download;
 
+import org.springframework.data.annotation.Id;
+import org.springframework.data.relational.core.mapping.Column;
+import org.springframework.data.relational.core.mapping.Table;
+
 import java.time.Instant;
 
 /**
@@ -13,12 +17,20 @@ import java.time.Instant;
  * downloaded byte count). {@code budgetBytes} is seeded from config on the first
  * accounting row and an ADMIN may raise/lower it.
  */
+@Table("tube_storage_usage")
 public record StorageUsage(
-        String domain,
-        String userSubject,
-        long usedBytes,
-        long budgetBytes,
-        Instant updatedAt) {
+        @Id @Column("domain") String domain,
+        @Column("user_subject") String userSubject,
+        @Column("used_bytes") long usedBytes,
+        @Column("budget_bytes") long budgetBytes,
+        @Column("updated_at") Instant updatedAt) {
+
+    // tube_storage_usage has a COMPOSITE PK (domain, user_subject); Spring Data R2DBC
+    // models only a single @Id, so {@code domain} carries the annotation purely to give
+    // the mapping context an identifier property. This entity is NEVER persisted via
+    // save()/findById() — its INSERT + the two arithmetic UPDATEs are explicit
+    // constant-@Query writes and the read is a derived finder, so the single-@Id
+    // limitation never affects correctness.
 
     /** True iff this user has reached/exceeded their budget — the pause-on-full predicate
      *  the enqueue/claim path applies (new work is skipped, never looped). */
