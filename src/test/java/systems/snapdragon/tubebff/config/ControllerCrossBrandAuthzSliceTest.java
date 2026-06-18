@@ -5,7 +5,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import systems.snapdragon.tubebff.access.TubeAccess;
+import systems.snapdragon.tubebff.access.TubeAccessGuard;
+import systems.snapdragon.tubebff.access.TubeAccessRepository;
 import systems.snapdragon.tubebff.download.StorageUsage;
 import systems.snapdragon.tubebff.download.StorageUsageService;
 import systems.snapdragon.tubebff.download.TubeStorageBudgetController;
@@ -21,6 +25,7 @@ import java.util.Base64;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -94,8 +99,18 @@ class ControllerCrossBrandAuthzSliceTest extends MultiIssuerControllerSliceSuppo
         assertThat(registry.isMultiIssuer()).as("two trusted issuers ⇒ multi-issuer mode").isTrue();
 
         // TubeMediaController: a REAL token service (signs for real — the URL it returns
-        // is asserted to embed the issuer-derived domain, never a request value).
-        mediaController = new TubeMediaController(new TubeMediaTokenService(MEDIA_KEY));
+        // is asserted to embed the issuer-derived domain, never a request value) + a REAL
+        // DEFAULT-DENY use gate over a mocked repo. Signing is a USE of the service, so it
+        // is now overlay-gated; this slice exercises the ISSUER→DOMAIN + owner walls, so the
+        // use overlay is defaulted to an active GRANT for the caller (the dedicated
+        // default-deny/ban proofs live in TubeMediaSecuritySliceTest + TubeMediaControllerTest).
+        TubeAccessRepository accessRepo = mock(TubeAccessRepository.class);
+        when(accessRepo.activeFor(any(), any())).thenAnswer(inv -> Flux.just(
+                new TubeAccess("use-" + inv.getArgument(0), inv.getArgument(1), inv.getArgument(0),
+                        TubeAccess.TYPE_USE, TubeAccess.STATE_ACTIVE, "admin", "enable",
+                        Instant.now(), null, null)));
+        TubeAccessGuard useGate = new TubeAccessGuard(accessRepo, new PrincipalDomain(registry));
+        mediaController = new TubeMediaController(new TubeMediaTokenService(MEDIA_KEY), useGate);
 
         // TubeStorageBudgetController: a REAL PrincipalDomain (so the brand is derived
         // SERVER-SIDE from the validated issuer) + a mocked service to capture the domain.

@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
+import systems.snapdragon.tubebff.access.TubeAccessGuard;
 import systems.snapdragon.tubebff.security.Roles;
 import systems.snapdragon.tubebff.web.ApiException;
 
@@ -21,6 +22,17 @@ import java.util.regex.Pattern;
  * The media URL signing surface — generates short-TTL HMAC-signed URLs that authorise
  * a specific user to stream a specific piece of content from the tube-media Nginx
  * sidecar.
+ *
+ * <p><b>DEFAULT-DENY use gate (first wall).</b> Before any path handling, {@code sign()}
+ * invokes {@link TubeAccessGuard#assertCanUse} — exactly as
+ * {@link systems.snapdragon.tubebff.download.TubeDownloadController},
+ * {@link systems.snapdragon.tubebff.google.TubeSubscriptionsController}, and
+ * {@link systems.snapdragon.tubebff.google.GoogleConnectController} do. The bare
+ * {@code ROLE_TUBE} floor does NOT confer use: a banned / timed-out / never-granted
+ * principal is 403'd here, so the ban/timeout that already blocks downloads and
+ * subscriptions ALSO blocks the viewing capability (obtaining a signed media URL). Only
+ * an active {@code tube_access} use grant (or the SUPERADMIN infra exemption inside the
+ * guard) gets past this gate.
  *
  * <p><b>Two-wall owner check.</b>
  * <ol>
@@ -74,8 +86,17 @@ public class TubeMediaController {
 
     private final TubeMediaTokenService tokenService;
 
-    public TubeMediaController(TubeMediaTokenService tokenService) {
+    /** The DEFAULT-DENY use overlay gate. Signing a media URL is a USE of the tube service,
+     *  so it is gated by the same grant/ban/timeout overlay as downloads, subscriptions, and
+     *  the Google connect flow — the bare {@code ROLE_TUBE} floor does not substitute for a
+     *  grant. The exact decision (an active use grant AND NOT an active ban, SUPERADMIN
+     *  exempt) is enforced programmatically by {@link TubeAccessGuard#assertCanUse} because a
+     *  static {@code @PreAuthorize} cannot consult the DB for a per-principal grant/ban. */
+    private final TubeAccessGuard useGate;
+
+    public TubeMediaController(TubeMediaTokenService tokenService, TubeAccessGuard useGate) {
         this.tokenService = tokenService;
+        this.useGate = useGate;
     }
 
     /**
@@ -86,6 +107,8 @@ public class TubeMediaController {
      *
      * <p>Error responses:
      * <ul>
+     *   <li>{@code 403} — the principal has no active {@code tube_access} use grant, or is
+     *       under an active ban/timeout (the DEFAULT-DENY use gate, enforced FIRST).</li>
      *   <li>{@code 400} — path does not match the allowlist pattern (includes path
      *       traversal attempts or malformed paths).</li>
      *   <li>{@code 403} — the path's embedded domain or subject does not match the
@@ -96,12 +119,28 @@ public class TubeMediaController {
      * @param auth the Spring Security authentication carrying the JWT
      */
     @Operation(summary = "Sign a short-TTL (5 min) media URL for the calling user's own content. "
+            + "Default-deny use (TubeAccessGuard) enforced first. "
             + "Path must start with /<domain>/<subject>/. Returns signed URL + expiresAt. "
-            + "403 if path owner != jwt.subject; 400 if path is malformed.")
+            + "403 if no use grant / banned; 403 if path owner != jwt.subject; 400 if path is malformed.")
     @PreAuthorize(AUTHENTICATED)
     @GetMapping("/sign")
     public Mono<ResponseEntity<TubeMediaDto.SignedUrl>> sign(
             @RequestParam String path, Authentication auth) {
+        // ── DEFAULT-DENY use gate (first wall) ────────────────────────────────
+        // Signing a media URL is a USE of the tube service. Gate it with the same
+        // grant/ban/timeout overlay as downloads/subscriptions/connect BEFORE any path or
+        // owner handling — a banned/timed-out/never-granted ROLE_TUBE principal must NOT be
+        // able to mint a signed URL even for their own content. The path/owner walls below
+        // are not invoked until the gate completes (Mono.defer).
+        return useGate.assertCanUse(auth)
+                .then(Mono.defer(() -> signGranted(path, auth)));
+    }
+
+    /**
+     * The path-safety + owner two-wall + signing body, reached ONLY after the DEFAULT-DENY
+     * use gate ({@link TubeAccessGuard#assertCanUse}) has completed.
+     */
+    private Mono<ResponseEntity<TubeMediaDto.SignedUrl>> signGranted(String path, Authentication auth) {
 
         // ── path safety (wall 2a) ─────────────────────────────────────────────
         if (!PATH_PATTERN.matcher(path).matches()) {
