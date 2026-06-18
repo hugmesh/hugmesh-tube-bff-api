@@ -192,6 +192,7 @@ public class SecurityConfig {
     SecurityWebFilterChain devFilterChain(ServerHttpSecurity http) {
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
+                .headers(SecurityConfig::bffHeaders)
                 .authorizeExchange(ex -> {
                     commonRoutes(ex);
                     ex.pathMatchers(SPEC_PATHS).permitAll();
@@ -213,6 +214,7 @@ public class SecurityConfig {
     SecurityWebFilterChain filterChain(ServerHttpSecurity http) {
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
+                .headers(SecurityConfig::bffHeaders)
                 .authorizeExchange(ex -> {
                     commonRoutes(ex);
                     ex.pathMatchers(SPEC_PATHS).hasAnyRole("ADMIN", "SUPERADMIN");
@@ -220,6 +222,38 @@ public class SecurityConfig {
                 })
                 .oauth2ResourceServer(this::resourceServer)
                 .build();
+    }
+
+    /**
+     * Reactive HTTP response-header hardening for a pure-JSON BFF resource server
+     * (OWASP secure-headers / NIST 800-228 / ASVS V14.4). This BFF always sits
+     * BEHIND the TLS-terminating snapdragon-gateway front door, which emits the full
+     * browser-policy set (HSTS, the UI-shell CSP, Permissions-Policy, COOP/CORP) ONCE
+     * for every brand so the 12 BFF configs can't drift; this method re-asserts only
+     * the API-defensive minimum as defence-in-depth.
+     *
+     * <p><b>What this ADDS:</b> a no-document {@code Content-Security-Policy:
+     * default-src 'none'; frame-ancestors 'none'} — the right CSP for a JSON API that
+     * never serves HTML (locks any reflected/error body out of script/frame execution).
+     *
+     * <p><b>What this KEEPS (Spring reactive secure defaults — deliberately NOT
+     * disabled):</b> {@code X-Content-Type-Options: nosniff},
+     * {@code X-Frame-Options: DENY}, {@code Cache-Control: no-store...}, and
+     * {@code Referrer-Policy} are all emitted by Spring's default header writers; this
+     * method does not touch them so they remain in force.
+     *
+     * <p><b>What this deliberately OMITS:</b> HSTS (meaningless / misleading over the
+     * plaintext intra-mesh hop to a BFF — it belongs ONLY at the gateway's TLS edge),
+     * Permissions-Policy and the UI-shell CSP (no-document JSON API has no browsing
+     * context to constrain). It also does NOT add {@code .cors(...)} — CORS stays
+     * default-closed; this BFF is reached only via the gateway, never cross-origin.
+     */
+    private static void bffHeaders(ServerHttpSecurity.HeaderSpec h) {
+        // Minimal API-CSP: a JSON BFF serves no HTML/script/frame — lock everything to 'none'.
+        h.contentSecurityPolicy(csp ->
+                csp.policyDirectives("default-src 'none'; frame-ancestors 'none'"));
+        // nosniff + X-Frame-Options DENY + Cache-Control + Referrer-Policy remain Spring
+        // reactive secure defaults — intentionally left implicit (NOT disabled).
     }
 
     /**
