@@ -9,7 +9,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
-import systems.snapdragon.tubebff.security.DomainRegistry;
+import systems.snapdragon.commons.config.TenancyResolvers;
+import systems.snapdragon.commons.config.TenancyResourceServerConfig;
+import systems.snapdragon.commons.security.DomainRegistry;
 import systems.snapdragon.tubebff.testsupport.TestIssuer;
 
 import java.util.List;
@@ -60,7 +62,8 @@ class SecurityHeadersSliceTest extends SecuritySliceSupport {
                 issuer.issuerUri(),
                 issuer.issuerUri() + "=brandx," + other.issuerUri() + "=brandy");
         ReactiveAuthenticationManagerResolver<ServerWebExchange> resolver =
-                new TenancyResourceServerConfig(registry, "", "").tenantAuthManagerResolver();
+                TenancyResolvers.tenantResolver(
+                        new TenancyResourceServerConfig(registry, "", "", false, 600_000L));
         client = sliceClient(registry, provider(resolver), new HeaderController());
     }
 

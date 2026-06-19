@@ -1,5 +1,6 @@
 package systems.snapdragon.tubebff.config;
 
+
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.authentication.ReactiveAuthenticationManagerResolver;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
@@ -7,7 +8,7 @@ import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.WebFilterChainProxy;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.server.ServerWebExchange;
-import systems.snapdragon.tubebff.security.DomainRegistry;
+import systems.snapdragon.commons.security.DomainRegistry;
 
 /**
  * Shared scaffolding for the tube-BFF SECURITY-SLICE tests — builds a

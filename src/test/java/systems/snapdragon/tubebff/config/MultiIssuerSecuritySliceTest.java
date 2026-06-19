@@ -13,7 +13,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
-import systems.snapdragon.tubebff.security.DomainRegistry;
+import systems.snapdragon.commons.config.TenancyResolvers;
+import systems.snapdragon.commons.config.TenancyResourceServerConfig;
+import systems.snapdragon.commons.security.DomainRegistry;
 import systems.snapdragon.tubebff.testsupport.TestIssuer;
 
 import java.util.List;
@@ -96,7 +98,8 @@ class MultiIssuerSecuritySliceTest extends SecuritySliceSupport {
         // Build the repo's real multi-issuer resolver the way the tenancy config
         // contributes it (back-compat issuer-uri/jwk-set-uri empty in this slice).
         ReactiveAuthenticationManagerResolver<ServerWebExchange> resolver =
-                new TenancyResourceServerConfig(registry, "", "").tenantAuthManagerResolver();
+                TenancyResolvers.tenantResolver(
+                        new TenancyResourceServerConfig(registry, "", "", false, 600_000L));
 
         client = sliceClient(registry, provider(resolver), new AuthoritiesController());
     }

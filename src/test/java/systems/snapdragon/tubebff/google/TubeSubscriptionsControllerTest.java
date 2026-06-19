@@ -12,7 +12,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import systems.snapdragon.tubebff.access.TubeAccessGuard;
 import systems.snapdragon.tubebff.config.SecurityConfig;
-import systems.snapdragon.tubebff.web.ApiException;
+import systems.snapdragon.commons.web.ApiException;
 import systems.snapdragon.tubebff.web.ApiExceptionHandler;
 
 import java.time.Instant;

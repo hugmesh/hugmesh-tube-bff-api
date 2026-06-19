@@ -3,8 +3,8 @@ package systems.snapdragon.tubebff.download;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
-import systems.snapdragon.tubebff.security.DomainRegistry;
-import systems.snapdragon.tubebff.security.DomainScope;
+import systems.snapdragon.commons.security.DomainRegistry;
+import systems.snapdragon.commons.tenancy.DomainScope;
 
 import java.time.Instant;
 

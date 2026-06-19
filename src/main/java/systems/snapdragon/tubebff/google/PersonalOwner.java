@@ -3,9 +3,9 @@ package systems.snapdragon.tubebff.google;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
-import systems.snapdragon.tubebff.security.DomainRegistry;
-import systems.snapdragon.tubebff.security.Roles;
-import systems.snapdragon.tubebff.web.ApiException;
+import systems.snapdragon.commons.security.DomainRegistry;
+import systems.snapdragon.commons.security.Roles;
+import systems.snapdragon.commons.web.ApiException;
 
 /**
  * Resolves the {@code (subject, domain)} key for a PERSONAL Google connect / subscriptions

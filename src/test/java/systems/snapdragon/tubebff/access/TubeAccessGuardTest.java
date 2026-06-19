@@ -12,10 +12,10 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.test.StepVerifier;
-import systems.snapdragon.tubebff.security.DomainRegistry;
+import systems.snapdragon.commons.security.DomainRegistry;
 import systems.snapdragon.tubebff.security.PrincipalDomain;
 import systems.snapdragon.tubebff.support.TestDatabaseConfig;
-import systems.snapdragon.tubebff.web.ApiException;
+import systems.snapdragon.commons.web.ApiException;
 
 import java.time.Instant;
 import java.util.ArrayList;

@@ -15,7 +15,7 @@ import systems.snapdragon.tubebff.download.StorageUsageService;
 import systems.snapdragon.tubebff.download.TubeStorageBudgetController;
 import systems.snapdragon.tubebff.media.TubeMediaController;
 import systems.snapdragon.tubebff.media.TubeMediaTokenService;
-import systems.snapdragon.tubebff.security.DomainRegistry;
+import systems.snapdragon.commons.security.DomainRegistry;
 import systems.snapdragon.tubebff.security.PrincipalDomain;
 import systems.snapdragon.tubebff.testsupport.TestIssuer;
 import systems.snapdragon.tubebff.web.ApiExceptionHandler;
