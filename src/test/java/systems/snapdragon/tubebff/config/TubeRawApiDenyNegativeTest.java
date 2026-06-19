@@ -23,7 +23,7 @@ import systems.snapdragon.tubebff.download.SubscriptionRepository;
 import systems.snapdragon.tubebff.download.TubeDownloadController;
 import systems.snapdragon.tubebff.download.TubeDownloadDto;
 import systems.snapdragon.tubebff.download.TubeDownloadWorkerController;
-import systems.snapdragon.tubebff.security.DomainRegistry;
+import systems.snapdragon.commons.security.DomainRegistry;
 import systems.snapdragon.tubebff.security.PrincipalDomain;
 import systems.snapdragon.tubebff.support.TestDatabaseConfig;
 import systems.snapdragon.tubebff.testsupport.TestIssuer;

@@ -3,8 +3,8 @@ package systems.snapdragon.tubebff.download;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import systems.snapdragon.tubebff.security.DomainRegistry;
-import systems.snapdragon.tubebff.security.DomainScope;
+import systems.snapdragon.commons.security.DomainRegistry;
+import systems.snapdragon.commons.tenancy.DomainScope;
 
 import java.time.Instant;
 import java.util.UUID;

@@ -1,5 +1,6 @@
 package systems.snapdragon.tubebff.config;
 
+
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.authentication.ReactiveAuthenticationManagerResolver;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
@@ -7,7 +8,9 @@ import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.WebFilterChainProxy;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.server.ServerWebExchange;
-import systems.snapdragon.tubebff.security.DomainRegistry;
+import systems.snapdragon.commons.config.TenancyResolvers;
+import systems.snapdragon.commons.config.TenancyResourceServerConfig;
+import systems.snapdragon.commons.security.DomainRegistry;
 
 /**
  * Wave-2 controller-slice scaffolding — builds a {@link WebTestClient} that drives the
@@ -72,7 +75,8 @@ abstract class MultiIssuerControllerSliceSupport {
     static WebTestClient sliceClient(DomainRegistry registry, Object[] controllerAdvice,
                                      Object... controllers) {
         ReactiveAuthenticationManagerResolver<ServerWebExchange> resolver =
-                new TenancyResourceServerConfig(registry, "", "").tenantAuthManagerResolver();
+                TenancyResolvers.tenantResolver(
+                        new TenancyResourceServerConfig(registry, "", "", false, 600_000L));
 
         SecurityConfig config = new SecurityConfig(registry, provider(resolver));
         SecurityWebFilterChain chain = config.filterChain(ServerHttpSecurity.http());

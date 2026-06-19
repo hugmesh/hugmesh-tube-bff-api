@@ -1,5 +1,7 @@
 package systems.snapdragon.tubebff.web;
 
+import systems.snapdragon.commons.web.ApiException;
+
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;

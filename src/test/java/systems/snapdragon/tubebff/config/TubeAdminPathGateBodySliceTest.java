@@ -1,5 +1,6 @@
 package systems.snapdragon.tubebff.config;
 
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,7 +12,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
-import systems.snapdragon.tubebff.security.DomainRegistry;
+import systems.snapdragon.commons.config.TenancyResolvers;
+import systems.snapdragon.commons.config.TenancyResourceServerConfig;
+import systems.snapdragon.commons.security.DomainRegistry;
 import systems.snapdragon.tubebff.testsupport.TestIssuer;
 
 import java.util.List;
@@ -62,7 +65,8 @@ class TubeAdminPathGateBodySliceTest extends SecuritySliceSupport {
                 issuer.issuerUri(),
                 issuer.issuerUri() + "=brandx," + other.issuerUri() + "=brandy");
         ReactiveAuthenticationManagerResolver<ServerWebExchange> resolver =
-                new TenancyResourceServerConfig(registry, "", "").tenantAuthManagerResolver();
+                TenancyResolvers.tenantResolver(
+                        new TenancyResourceServerConfig(registry, "", "", false, 600_000L));
         client = sliceClient(registry, provider(resolver), new GatedController());
     }
 

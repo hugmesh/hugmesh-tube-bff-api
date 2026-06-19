@@ -6,7 +6,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import systems.snapdragon.tubebff.web.ApiException;
+import systems.snapdragon.commons.web.ApiException;
 
 import java.util.concurrent.atomic.AtomicInteger;
 

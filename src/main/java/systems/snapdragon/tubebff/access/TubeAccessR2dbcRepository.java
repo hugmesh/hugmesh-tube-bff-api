@@ -14,7 +14,7 @@ import reactor.core.publisher.Mono;
  * methods, plus a single {@code @Query} (a {@code static final String} constant, never
  * an inline literal) for the CAS update derivation cannot express.
  *
- * <p>The {@link systems.snapdragon.tubebff.security.DomainScope} null-vs-non-null
+ * <p>The {@link systems.snapdragon.commons.tenancy.DomainScope} null-vs-non-null
  * predicate (a {@code null} domain = the SUPERADMIN cross-domain bypass = NO predicate)
  * is reproduced with PAIRS of derived finders — a brand-scoped variant
  * ({@code ...AndDomain...}) and an un-pinned variant — exactly as the federation

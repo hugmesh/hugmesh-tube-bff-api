@@ -13,7 +13,9 @@ import systems.snapdragon.tubebff.access.TubeAccessGuard;
 import systems.snapdragon.tubebff.access.TubeAccessRepository;
 import systems.snapdragon.tubebff.media.TubeMediaController;
 import systems.snapdragon.tubebff.media.TubeMediaTokenService;
-import systems.snapdragon.tubebff.security.DomainRegistry;
+import systems.snapdragon.commons.config.TenancyResolvers;
+import systems.snapdragon.commons.config.TenancyResourceServerConfig;
+import systems.snapdragon.commons.security.DomainRegistry;
 import systems.snapdragon.tubebff.security.PrincipalDomain;
 import systems.snapdragon.tubebff.testsupport.TestIssuer;
 import systems.snapdragon.tubebff.web.ApiExceptionHandler;
@@ -99,7 +101,8 @@ class TubeMediaSecuritySliceTest extends SecuritySliceSupport {
                 brandX.issuerUri(),
                 brandX.issuerUri() + "=brandx," + brandY.issuerUri() + "=brandy");
         ReactiveAuthenticationManagerResolver<ServerWebExchange> resolver =
-                new TenancyResourceServerConfig(registry, "", "").tenantAuthManagerResolver();
+                TenancyResolvers.tenantResolver(
+                        new TenancyResourceServerConfig(registry, "", "", false, 600_000L));
 
         // A REAL TubeAccessGuard over a mocked repo + the real (issuer-derived) PrincipalDomain,
         // so the DEFAULT-DENY use overlay is exercised end-to-end through the production chain.

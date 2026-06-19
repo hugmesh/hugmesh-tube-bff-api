@@ -6,7 +6,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
-import systems.snapdragon.tubebff.web.ApiException;
+import systems.snapdragon.commons.web.ApiException;
 
 /**
  * The connect / callback / disconnect lifecycle of a user's Google (youtube.readonly)

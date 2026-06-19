@@ -7,7 +7,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
-import systems.snapdragon.tubebff.web.ApiException;
+import systems.snapdragon.commons.web.ApiException;
 
 import java.util.ArrayList;
 import java.util.List;

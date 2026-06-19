@@ -12,7 +12,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
 import systems.snapdragon.tubebff.access.TubeAccessGuard;
 import systems.snapdragon.tubebff.config.SecurityConfig;
-import systems.snapdragon.tubebff.web.ApiException;
+import systems.snapdragon.commons.web.ApiException;
 import systems.snapdragon.tubebff.web.ApiExceptionHandler;
 
 import java.util.Base64;

@@ -4,8 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import reactor.core.publisher.Flux;
-import systems.snapdragon.tubebff.security.CasdoorAuthorities;
-import systems.snapdragon.tubebff.security.DomainRegistry;
+import systems.snapdragon.commons.security.CasdoorAuthorities;
+import systems.snapdragon.commons.security.DomainRegistry;
 
 import java.time.Instant;
 import java.util.List;

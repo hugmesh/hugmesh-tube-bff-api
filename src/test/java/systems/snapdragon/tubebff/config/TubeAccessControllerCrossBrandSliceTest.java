@@ -12,7 +12,7 @@ import reactor.core.publisher.Mono;
 import systems.snapdragon.tubebff.access.TubeAccess;
 import systems.snapdragon.tubebff.access.TubeAccessController;
 import systems.snapdragon.tubebff.access.TubeAccessService;
-import systems.snapdragon.tubebff.security.DomainRegistry;
+import systems.snapdragon.commons.security.DomainRegistry;
 import systems.snapdragon.tubebff.testsupport.TestIssuer;
 import systems.snapdragon.tubebff.web.ApiExceptionHandler;
 
