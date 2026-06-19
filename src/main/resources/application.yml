@@ -48,6 +48,13 @@ tube:
 # pipeline consume. Spec + UI are gated by SecurityConfig: permitAll under dev/test (so
 # `gen:fetch` can curl the spec without a token) and ROLE_ADMIN otherwise (prod).
 springdoc:
+  # ng-openapi-gen maps a response whose only media type is */* to a Blob (binary)
+  # return type, which breaks JSON parsing in the generated typed client. Pinning the
+  # default produced media type to application/json makes springdoc emit
+  # `content: { application/json: ... }` for every controller method that does not
+  # declare its own `produces`, so the generated client parses JSON. Any binary endpoint
+  # that needs octet-stream still declares its own explicit `produces` and is unaffected.
+  default-produces-media-type: application/json
   api-docs:
     enabled: true
     path: /v3/api-docs

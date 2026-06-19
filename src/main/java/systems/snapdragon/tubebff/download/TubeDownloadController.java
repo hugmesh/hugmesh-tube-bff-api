@@ -48,7 +48,8 @@ public class TubeDownloadController {
         this.useGate = useGate;
     }
 
-    @Operation(summary = "List the calling user's OWN download jobs (owner + brand "
+    @Operation(operationId = "listDownloadJobs",
+            summary = "List the calling user's OWN download jobs (owner + brand "
             + "server-derived). Default-deny use enforced first.")
     @PreAuthorize(AUTHENTICATED)
     @GetMapping
@@ -60,7 +61,8 @@ public class TubeDownloadController {
                 .map(TubeDownloadDto.JobList::new);
     }
 
-    @Operation(summary = "Enqueue download jobs from the calling user's subscriptions "
+    @Operation(operationId = "enqueueDownloadJobs",
+            summary = "Enqueue download jobs from the calling user's subscriptions "
             + "(deduped; pause-on-full marks new work skipped when the storage budget is "
             + "full). Owner + brand server-derived. Default-deny use enforced first.")
     @PreAuthorize(AUTHENTICATED)

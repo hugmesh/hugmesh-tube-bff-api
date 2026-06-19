@@ -35,7 +35,8 @@ public class TubeSubscriptionsController {
         this.sync = sync;
     }
 
-    @Operation(summary = "List the current user's stored subscribed channels (owner-scoped; "
+    @Operation(operationId = "listSubscriptions",
+            summary = "List the current user's stored subscribed channels (owner-scoped; "
             + "no network call). Use-gated.")
     @GetMapping
     public Mono<TubeGoogleDto.SubscriptionList> list(Authentication auth) {
@@ -46,7 +47,8 @@ public class TubeSubscriptionsController {
                 .map(TubeGoogleDto.SubscriptionList::new);
     }
 
-    @Operation(summary = "Sync the current user's subscriptions from Google (refresh -> page "
+    @Operation(operationId = "syncSubscriptions",
+            summary = "Sync the current user's subscriptions from Google (refresh -> page "
             + "subscriptions.list?mine=true -> idempotent UPSERT). A failed refresh marks "
             + "reauth_required and STOPS. Use-gated + owner-scoped.")
     @PostMapping("/sync")

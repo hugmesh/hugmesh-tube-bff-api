@@ -44,7 +44,8 @@ public class TubeDownloadWorkerController {
         this.service = service;
     }
 
-    @Operation(summary = "WORKER claims up to N queued jobs (atomic — each job to exactly "
+    @Operation(operationId = "claimDownloadJobs",
+            summary = "WORKER claims up to N queued jobs (atomic — each job to exactly "
             + "one worker; pause-on-full honoured). ROLE_TUBE_WORKER only.")
     @PreAuthorize(WORKER_ONLY)
     @PostMapping("/claim")
@@ -55,7 +56,8 @@ public class TubeDownloadWorkerController {
                 .map(TubeDownloadDto.JobList::new);
     }
 
-    @Operation(summary = "WORKER reports a job result (done stamps bytes+path and accounts "
+    @Operation(operationId = "reportDownloadJob",
+            summary = "WORKER reports a job result (done stamps bytes+path and accounts "
             + "storage; failed stamps the error; downloading marks progress). "
             + "ROLE_TUBE_WORKER only.")
     @PreAuthorize(WORKER_ONLY)

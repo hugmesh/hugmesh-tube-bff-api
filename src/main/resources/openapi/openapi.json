@@ -1,0 +1,805 @@
+{
+  "openapi" : "3.0.1",
+  "info" : {
+    "title" : "snapdragon-tube-bff-api",
+    "description" : "Tube BFF API (/bff/tube/**) — the access governance plane for the LocalTube video optional service. PR2 owns the tube_access use/timeout/ban overlay (cloned from owncast_grant / wiki_access): DEFAULT-DENY may-use enforced at request time by TubeAccessGuard (an active use grant AND NOT an active ban, precedence ban>grant, SUPERADMIN exempt). Grant/timeout/ban/restore gated TUBE_GOVERN (admin|superadmin); list-all/history gated TUBE_MANAGE (superadmin). All surfaces are domain-scoped per multi-brand: a scoped ADMIN governs only own-brand users. The Google-connect/subs-sync, the yt-dlp downloader, and the per-domain content media serving (range/HLS) are SEPARATE components, not this BFF.",
+    "version" : "0.1.0"
+  },
+  "servers" : [ {
+    "url" : "",
+    "description" : "Generated server url"
+  } ],
+  "tags" : [ {
+    "name" : "Tube Storage Budget (admin)",
+    "description" : "ADMIN sets a user's download storage budget cap (ADMIN|SUPERADMIN). Brand server-derived (own-brand only)."
+  }, {
+    "name" : "Tube Subscriptions",
+    "description" : "List + sync a user's subscribed YouTube channels. Gated by the tube_access use overlay (TubeAccessGuard) + owner-scope (server-derived subject+brand, fail-closed). A failed refresh sets reauth_required and STOPS the sync."
+  }, {
+    "name" : "Tube Google Connect",
+    "description" : "Connect/callback/disconnect a user's Google (youtube.readonly) account. Gated by the tube_access use overlay (TubeAccessGuard) + owner-scope (server-derived subject+brand, fail-closed). The refresh token is AES-256-GCM-encrypted at rest and NEVER returned."
+  }, {
+    "name" : "Tube Downloads",
+    "description" : "The user's download work-queue: list own jobs + enqueue from subscriptions. Default-deny use (TubeAccessGuard) enforced first; owner + brand are server-derived from the JWT (no cross-user/cross-brand access)."
+  }, {
+    "name" : "Tube Use Access",
+    "description" : "Tube use grant/timeout/ban overlay (tube_access): grant/timeout/ban/restore (TUBE_GOVERN), list-all/history (TUBE_MANAGE). Domain-scoped; use is DEFAULT-DENY, enforced at request time by TubeAccessGuard (an active use grant AND NOT an active ban, SUPERADMIN exempt)."
+  }, {
+    "name" : "Tube Media Signing",
+    "description" : "Short-TTL HMAC-signed media URLs for the tube-media Nginx sidecar. Owner two-wall: ROLE_TUBE at gateway (wall 1) + path owner==jwt.subject (wall 2). Signed URL binds user, domain, path, and expiry; TTL = 5 min."
+  }, {
+    "name" : "Tube Download Worker (internal)",
+    "description" : "INTERNAL claim/report seam for the future yt-dlp downloader CronJob. ROLE_TUBE_WORKER (service principal) ONLY — NOT reachable by ROLE_TUBE users or any human role."
+  } ],
+  "paths" : {
+    "/bff/tube/subscriptions/sync" : {
+      "post" : {
+        "tags" : [ "Tube Subscriptions" ],
+        "summary" : "Sync the current user's subscriptions from Google (refresh -> page subscriptions.list?mine=true -> idempotent UPSERT). A failed refresh marks reauth_required and STOPS. Use-gated + owner-scoped.",
+        "operationId" : "syncSubscriptions",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SyncResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/internal/download-jobs/report" : {
+      "post" : {
+        "tags" : [ "Tube Download Worker (internal)" ],
+        "summary" : "WORKER reports a job result (done stamps bytes+path and accounts storage; failed stamps the error; downloading marks progress). ROLE_TUBE_WORKER only.",
+        "operationId" : "reportDownloadJob",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ReportRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Job"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/internal/download-jobs/claim" : {
+      "post" : {
+        "tags" : [ "Tube Download Worker (internal)" ],
+        "summary" : "WORKER claims up to N queued jobs (atomic — each job to exactly one worker; pause-on-full honoured). ROLE_TUBE_WORKER only.",
+        "operationId" : "claimDownloadJobs",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ClaimRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/google-connect/disconnect" : {
+      "post" : {
+        "tags" : [ "Tube Google Connect" ],
+        "summary" : "Disconnect: best-effort revoke the token at Google, then soft-revoke the connection (audit-retained). Use-gated + owner-scoped.",
+        "operationId" : "googleDisconnect",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/downloads" : {
+      "get" : {
+        "tags" : [ "Tube Downloads" ],
+        "summary" : "List the calling user's OWN download jobs (owner + brand server-derived). Default-deny use enforced first.",
+        "operationId" : "listDownloadJobs",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post" : {
+        "tags" : [ "Tube Downloads" ],
+        "summary" : "Enqueue download jobs from the calling user's subscriptions (deduped; pause-on-full marks new work skipped when the storage budget is full). Owner + brand server-derived. Default-deny use enforced first.",
+        "operationId" : "enqueueDownloadJobs",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/admin/storage-budget" : {
+      "post" : {
+        "tags" : [ "Tube Storage Budget (admin)" ],
+        "summary" : "Set a target user's download storage budget (bytes). ADMIN/SUPERADMIN, own-brand (brand server-derived).",
+        "operationId" : "setStorageBudget",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/BudgetRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Usage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/admin/access/timeout" : {
+      "post" : {
+        "tags" : [ "Tube Use Access" ],
+        "summary" : "TIMEOUT a USER from the tube service for a bounded window (an active banned override with a future expires_at; auto-restores on expiry). ADMIN/SUPERADMIN, own-brand.",
+        "operationId" : "timeoutUseAccess",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/Timeout"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/admin/access/grant" : {
+      "post" : {
+        "tags" : [ "Tube Use Access" ],
+        "summary" : "GRANT a USER permanent may-use access (an active tube_access use override) — the way to lift a user above the default-deny use floor. ADMIN/SUPERADMIN, own-brand.",
+        "operationId" : "grantUseAccess",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GrantOrBan"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/admin/access/ban" : {
+      "post" : {
+        "tags" : [ "Tube Use Access" ],
+        "summary" : "BAN a USER from the tube service permanently (an active banned override, expires_at NULL). Denies even an active grantee (ban>grant). ADMIN/SUPERADMIN, own-brand.",
+        "operationId" : "banUseAccess",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GrantOrBan"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/superadmin/access" : {
+      "get" : {
+        "tags" : [ "Tube Use Access" ],
+        "summary" : "List all ACTIVE tube_access overrides (scoped to the caller's brand; SUPERADMIN sees all). SUPERADMIN.",
+        "operationId" : "listActiveUseAccess",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccessList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/superadmin/access/{userSubject}/history" : {
+      "get" : {
+        "tags" : [ "Tube Use Access" ],
+        "summary" : "The full grant/timeout/ban HISTORY (active + revoked = audit) for a principal (scoped to the caller's brand; SUPERADMIN sees all). SUPERADMIN.",
+        "operationId" : "useAccessHistory",
+        "parameters" : [ {
+          "name" : "userSubject",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccessList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/subscriptions" : {
+      "get" : {
+        "tags" : [ "Tube Subscriptions" ],
+        "summary" : "List the current user's stored subscribed channels (owner-scoped; no network call). Use-gated.",
+        "operationId" : "listSubscriptions",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SubscriptionList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/media/sign" : {
+      "get" : {
+        "tags" : [ "Tube Media Signing" ],
+        "summary" : "Sign a short-TTL (5 min) media URL for the calling user's own content. Default-deny use (TubeAccessGuard) enforced first. Path must start with /<domain>/<subject>/. Returns signed URL + expiresAt. 403 if no use grant / banned; 403 if path owner != jwt.subject; 400 if path is malformed.",
+        "operationId" : "signMediaUrl",
+        "parameters" : [ {
+          "name" : "path",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SignedUrl"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/google-connect/status" : {
+      "get" : {
+        "tags" : [ "Tube Google Connect" ],
+        "summary" : "The current user's Google connection status (display-safe; never exposes the refresh token). Use-gated + owner-scoped.",
+        "operationId" : "googleConnectStatus",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/google-connect/callback" : {
+      "get" : {
+        "tags" : [ "Tube Google Connect" ],
+        "summary" : "Google's OAuth redirect target: verify the signed state, exchange the code, AES-256-GCM-encrypt + store the refresh token. The state binds the principal (the callback hop carries no bearer of its own). Use-gated + owner-scoped.",
+        "operationId" : "googleConnectCallback",
+        "parameters" : [ {
+          "name" : "code",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "state",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/google-connect/authorize" : {
+      "get" : {
+        "tags" : [ "Tube Google Connect" ],
+        "summary" : "Build the Google consent URL (access_type=offline&prompt=consent for a refresh token) with a signed CSRF state binding this principal. Use-gated + owner-scoped.",
+        "operationId" : "googleAuthorizeUrl",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AuthorizeUrl"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bff/tube/admin/access/{accessType}/{userSubject}" : {
+      "delete" : {
+        "tags" : [ "Tube Use Access" ],
+        "summary" : "RESTORE/REVOKE: lift the active override of a type for a user (CAS active->revoked; the row is retained = audit). accessType = use|banned: revoke 'banned' to restore use; revoke 'use' to remove a grant. ADMIN/SUPERADMIN, own-brand.",
+        "operationId" : "revokeUseAccess",
+        "parameters" : [ {
+          "name" : "accessType",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "userSubject",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components" : {
+    "schemas" : {
+      "SyncResult" : {
+        "type" : "object",
+        "properties" : {
+          "synced" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
+      "ReportRequest" : {
+        "required" : [ "jobId", "result", "workerId" ],
+        "type" : "object",
+        "properties" : {
+          "jobId" : {
+            "type" : "string"
+          },
+          "workerId" : {
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "result" : {
+            "type" : "string"
+          },
+          "bytes" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "contentPath" : {
+            "maxLength" : 2048,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "error" : {
+            "maxLength" : 2048,
+            "minLength" : 0,
+            "type" : "string"
+          }
+        }
+      },
+      "Job" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string"
+          },
+          "domain" : {
+            "type" : "string"
+          },
+          "userSubject" : {
+            "type" : "string"
+          },
+          "channelId" : {
+            "type" : "string"
+          },
+          "videoId" : {
+            "type" : "string"
+          },
+          "title" : {
+            "type" : "string"
+          },
+          "state" : {
+            "type" : "string"
+          },
+          "claimedBy" : {
+            "type" : "string"
+          },
+          "claimedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "attempts" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "lastError" : {
+            "type" : "string"
+          },
+          "bytes" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "contentPath" : {
+            "type" : "string"
+          },
+          "createdAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "updatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }
+      },
+      "ClaimRequest" : {
+        "required" : [ "workerId" ],
+        "type" : "object",
+        "properties" : {
+          "workerId" : {
+            "maxLength" : 255,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "limit" : {
+            "minimum" : 1,
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
+      "JobList" : {
+        "type" : "object",
+        "properties" : {
+          "jobs" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Job"
+            }
+          }
+        }
+      },
+      "ConnectStatus" : {
+        "type" : "object",
+        "properties" : {
+          "connected" : {
+            "type" : "boolean"
+          },
+          "googleEmail" : {
+            "type" : "string"
+          },
+          "scopes" : {
+            "type" : "string"
+          },
+          "connectedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "reauthRequired" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "BudgetRequest" : {
+        "required" : [ "userSubject" ],
+        "type" : "object",
+        "properties" : {
+          "userSubject" : {
+            "maxLength" : 400,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "budgetBytes" : {
+            "minimum" : 0,
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "Usage" : {
+        "type" : "object",
+        "properties" : {
+          "domain" : {
+            "type" : "string"
+          },
+          "userSubject" : {
+            "type" : "string"
+          },
+          "usedBytes" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "budgetBytes" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "updatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }
+      },
+      "Timeout" : {
+        "required" : [ "userSubject" ],
+        "type" : "object",
+        "properties" : {
+          "userSubject" : {
+            "maxLength" : 400,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "ttlSeconds" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "reason" : {
+            "maxLength" : 1024,
+            "minLength" : 0,
+            "type" : "string"
+          }
+        }
+      },
+      "Access" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string"
+          },
+          "domain" : {
+            "type" : "string"
+          },
+          "userSubject" : {
+            "type" : "string"
+          },
+          "accessType" : {
+            "type" : "string"
+          },
+          "state" : {
+            "type" : "string"
+          },
+          "grantedBySubject" : {
+            "type" : "string"
+          },
+          "reason" : {
+            "type" : "string"
+          },
+          "createdAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "expiresAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "revokedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }
+      },
+      "GrantOrBan" : {
+        "required" : [ "userSubject" ],
+        "type" : "object",
+        "properties" : {
+          "userSubject" : {
+            "maxLength" : 400,
+            "minLength" : 0,
+            "type" : "string"
+          },
+          "reason" : {
+            "maxLength" : 1024,
+            "minLength" : 0,
+            "type" : "string"
+          }
+        }
+      },
+      "AccessList" : {
+        "type" : "object",
+        "properties" : {
+          "access" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Access"
+            }
+          }
+        }
+      },
+      "Subscription" : {
+        "type" : "object",
+        "properties" : {
+          "channelId" : {
+            "type" : "string"
+          },
+          "channelTitle" : {
+            "type" : "string"
+          },
+          "thumbnailUrl" : {
+            "type" : "string"
+          },
+          "syncedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }
+      },
+      "SubscriptionList" : {
+        "type" : "object",
+        "properties" : {
+          "subscriptions" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Subscription"
+            }
+          }
+        }
+      },
+      "SignedUrl" : {
+        "type" : "object",
+        "properties" : {
+          "url" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }
+      },
+      "AuthorizeUrl" : {
+        "type" : "object",
+        "properties" : {
+          "authorizeUrl" : {
+            "type" : "string"
+          }
+        }
+      }
+    }
+  }
+}

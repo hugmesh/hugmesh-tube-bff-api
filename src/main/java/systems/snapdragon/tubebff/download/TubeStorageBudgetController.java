@@ -47,7 +47,8 @@ public class TubeStorageBudgetController {
         this.principalDomain = principalDomain;
     }
 
-    @Operation(summary = "Set a target user's download storage budget (bytes). "
+    @Operation(operationId = "setStorageBudget",
+            summary = "Set a target user's download storage budget (bytes). "
             + "ADMIN/SUPERADMIN, own-brand (brand server-derived).")
     @PreAuthorize(TUBE_BUDGET)
     @PostMapping

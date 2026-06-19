@@ -60,7 +60,8 @@ public class GoogleConnectController {
         this.owner = owner;
     }
 
-    @Operation(summary = "The current user's Google connection status (display-safe; never "
+    @Operation(operationId = "googleConnectStatus",
+            summary = "The current user's Google connection status (display-safe; never "
             + "exposes the refresh token). Use-gated + owner-scoped.")
     @GetMapping("/status")
     public Mono<TubeGoogleDto.ConnectStatus> status(Authentication auth) {
@@ -72,7 +73,8 @@ public class GoogleConnectController {
                                 false, null, null, null, false)));
     }
 
-    @Operation(summary = "Build the Google consent URL (access_type=offline&prompt=consent "
+    @Operation(operationId = "googleAuthorizeUrl",
+            summary = "Build the Google consent URL (access_type=offline&prompt=consent "
             + "for a refresh token) with a signed CSRF state binding this principal. "
             + "Use-gated + owner-scoped.")
     @GetMapping("/authorize")
@@ -82,7 +84,8 @@ public class GoogleConnectController {
                 .map(TubeGoogleDto.AuthorizeUrl::new);
     }
 
-    @Operation(summary = "Google's OAuth redirect target: verify the signed state, exchange "
+    @Operation(operationId = "googleConnectCallback",
+            summary = "Google's OAuth redirect target: verify the signed state, exchange "
             + "the code, AES-256-GCM-encrypt + store the refresh token. The state binds the "
             + "principal (the callback hop carries no bearer of its own). Use-gated + owner-scoped.")
     @GetMapping("/callback")
@@ -94,7 +97,8 @@ public class GoogleConnectController {
                 .map(link -> ResponseEntity.ok(TubeGoogleDto.ConnectStatus.of(link)));
     }
 
-    @Operation(summary = "Disconnect: best-effort revoke the token at Google, then "
+    @Operation(operationId = "googleDisconnect",
+            summary = "Disconnect: best-effort revoke the token at Google, then "
             + "soft-revoke the connection (audit-retained). Use-gated + owner-scoped.")
     @PostMapping("/disconnect")
     public Mono<ResponseEntity<TubeGoogleDto.ConnectStatus>> disconnect(Authentication auth) {

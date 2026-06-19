@@ -60,7 +60,8 @@ public class TubeAccessController {
 
     // ── grant / timeout / ban / restore (TUBE_GOVERN) ──────────────────
 
-    @Operation(summary = "GRANT a USER permanent may-use access (an active tube_access "
+    @Operation(operationId = "grantUseAccess",
+            summary = "GRANT a USER permanent may-use access (an active tube_access "
             + "use override) — the way to lift a user above the default-deny use floor. "
             + "ADMIN/SUPERADMIN, own-brand.")
     @PreAuthorize(TUBE_GOVERN)
@@ -71,7 +72,8 @@ public class TubeAccessController {
                 .map(a -> ResponseEntity.ok(TubeAccessDto.Access.of(a)));
     }
 
-    @Operation(summary = "TIMEOUT a USER from the tube service for a bounded window (an active "
+    @Operation(operationId = "timeoutUseAccess",
+            summary = "TIMEOUT a USER from the tube service for a bounded window (an active "
             + "banned override with a future expires_at; auto-restores on expiry). "
             + "ADMIN/SUPERADMIN, own-brand.")
     @PreAuthorize(TUBE_GOVERN)
@@ -82,7 +84,8 @@ public class TubeAccessController {
                 .map(a -> ResponseEntity.ok(TubeAccessDto.Access.of(a)));
     }
 
-    @Operation(summary = "BAN a USER from the tube service permanently (an active banned override, "
+    @Operation(operationId = "banUseAccess",
+            summary = "BAN a USER from the tube service permanently (an active banned override, "
             + "expires_at NULL). Denies even an active grantee (ban>grant). ADMIN/SUPERADMIN, "
             + "own-brand.")
     @PreAuthorize(TUBE_GOVERN)
@@ -93,7 +96,8 @@ public class TubeAccessController {
                 .map(a -> ResponseEntity.ok(TubeAccessDto.Access.of(a)));
     }
 
-    @Operation(summary = "RESTORE/REVOKE: lift the active override of a type for a user "
+    @Operation(operationId = "revokeUseAccess",
+            summary = "RESTORE/REVOKE: lift the active override of a type for a user "
             + "(CAS active->revoked; the row is retained = audit). accessType = use|banned: "
             + "revoke 'banned' to restore use; revoke 'use' to remove a grant. "
             + "ADMIN/SUPERADMIN, own-brand.")
@@ -114,7 +118,8 @@ public class TubeAccessController {
 
     // ── manage-all (TUBE_MANAGE) ───────────────────────────────────────
 
-    @Operation(summary = "List all ACTIVE tube_access overrides (scoped to the caller's "
+    @Operation(operationId = "listActiveUseAccess",
+            summary = "List all ACTIVE tube_access overrides (scoped to the caller's "
             + "brand; SUPERADMIN sees all). SUPERADMIN.")
     @PreAuthorize(TUBE_MANAGE)
     @GetMapping("/superadmin/access")
@@ -123,7 +128,8 @@ public class TubeAccessController {
                 .collectList().map(TubeAccessDto.AccessList::new);
     }
 
-    @Operation(summary = "The full grant/timeout/ban HISTORY (active + revoked = audit) for "
+    @Operation(operationId = "useAccessHistory",
+            summary = "The full grant/timeout/ban HISTORY (active + revoked = audit) for "
             + "a principal (scoped to the caller's brand; SUPERADMIN sees all). SUPERADMIN.")
     @PreAuthorize(TUBE_MANAGE)
     @GetMapping("/superadmin/access/{userSubject}/history")

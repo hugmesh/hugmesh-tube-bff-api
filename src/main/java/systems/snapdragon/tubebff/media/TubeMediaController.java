@@ -118,7 +118,8 @@ public class TubeMediaController {
      * @param path the content path to sign, e.g. {@code /acme/alice/videos/vid.mp4}
      * @param auth the Spring Security authentication carrying the JWT
      */
-    @Operation(summary = "Sign a short-TTL (5 min) media URL for the calling user's own content. "
+    @Operation(operationId = "signMediaUrl",
+            summary = "Sign a short-TTL (5 min) media URL for the calling user's own content. "
             + "Default-deny use (TubeAccessGuard) enforced first. "
             + "Path must start with /<domain>/<subject>/. Returns signed URL + expiresAt. "
             + "403 if no use grant / banned; 403 if path owner != jwt.subject; 400 if path is malformed.")
