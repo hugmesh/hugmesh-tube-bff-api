@@ -1,5 +1,5 @@
 {
-  "openapi" : "3.1.0",
+  "openapi" : "3.0.1",
   "info" : {
     "title" : "snapdragon-tube-bff-api",
     "description" : "Tube BFF API (/bff/tube/**) — the access governance plane for the LocalTube video optional service. PR2 owns the tube_access use/timeout/ban overlay (cloned from owncast_grant / wiki_access): DEFAULT-DENY may-use enforced at request time by TubeAccessGuard (an active use grant AND NOT an active ban, precedence ban>grant, SUPERADMIN exempt). Grant/timeout/ban/restore gated TUBE_GOVERN (admin|superadmin); list-all/history gated TUBE_MANAGE (superadmin). All surfaces are domain-scoped per multi-brand: a scoped ADMIN governs only own-brand users. The Google-connect/subs-sync, the yt-dlp downloader, and the per-domain content media serving (range/HLS) are SEPARATE components, not this BFF.",
@@ -471,7 +471,9 @@
               "application/json" : {
                 "schema" : {
                   "type" : "object",
-                  "additionalProperties" : { }
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
                 }
               }
             }
@@ -492,37 +494,37 @@
         }
       },
       "ReportRequest" : {
+        "required" : [ "jobId", "result", "workerId" ],
         "type" : "object",
         "properties" : {
           "jobId" : {
-            "type" : "string",
-            "minLength" : 1
+            "minLength" : 1,
+            "type" : "string"
           },
           "workerId" : {
-            "type" : "string",
             "maxLength" : 255,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           },
           "result" : {
-            "type" : "string",
-            "minLength" : 1
+            "minLength" : 1,
+            "type" : "string"
           },
           "bytes" : {
             "type" : "integer",
             "format" : "int64"
           },
           "contentPath" : {
-            "type" : "string",
             "maxLength" : 2048,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           },
           "error" : {
-            "type" : "string",
             "maxLength" : 2048,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           }
-        },
-        "required" : [ "jobId", "result", "workerId" ]
+        }
       },
       "Job" : {
         "type" : "object",
@@ -580,20 +582,20 @@
         }
       },
       "ClaimRequest" : {
+        "required" : [ "workerId" ],
         "type" : "object",
         "properties" : {
           "workerId" : {
-            "type" : "string",
             "maxLength" : 255,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           },
           "limit" : {
+            "minimum" : 1,
             "type" : "integer",
-            "format" : "int32",
-            "minimum" : 1
+            "format" : "int32"
           }
-        },
-        "required" : [ "workerId" ]
+        }
       },
       "JobList" : {
         "type" : "object",
@@ -628,20 +630,20 @@
         }
       },
       "BudgetRequest" : {
+        "required" : [ "userSubject" ],
         "type" : "object",
         "properties" : {
           "userSubject" : {
-            "type" : "string",
             "maxLength" : 400,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           },
           "budgetBytes" : {
+            "minimum" : 0,
             "type" : "integer",
-            "format" : "int64",
-            "minimum" : 0
+            "format" : "int64"
           }
-        },
-        "required" : [ "userSubject" ]
+        }
       },
       "Usage" : {
         "type" : "object",
@@ -667,24 +669,24 @@
         }
       },
       "Timeout" : {
+        "required" : [ "userSubject" ],
         "type" : "object",
         "properties" : {
           "userSubject" : {
-            "type" : "string",
             "maxLength" : 400,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           },
           "ttlSeconds" : {
             "type" : "integer",
             "format" : "int64"
           },
           "reason" : {
-            "type" : "string",
             "maxLength" : 1024,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           }
-        },
-        "required" : [ "userSubject" ]
+        }
       },
       "Access" : {
         "type" : "object",
@@ -725,20 +727,20 @@
         }
       },
       "GrantOrBan" : {
+        "required" : [ "userSubject" ],
         "type" : "object",
         "properties" : {
           "userSubject" : {
-            "type" : "string",
             "maxLength" : 400,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           },
           "reason" : {
-            "type" : "string",
             "maxLength" : 1024,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           }
-        },
-        "required" : [ "userSubject" ]
+        }
       },
       "AccessList" : {
         "type" : "object",
