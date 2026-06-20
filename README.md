@@ -11,6 +11,40 @@ in-platform viewing). Twin of `snapdragon-owncast-bff-api` / `snapdragon-wiki-bf
 > 🔭 planned (design only, no code in this repo). See the
 > [Roadmap / not yet in this repo](#roadmap--not-yet-in-this-repo) section.
 
+## Current State
+
+As of 2026-06-20 this BFF sits on the unified Snapdragon ecosystem baseline:
+
+- **Spring Boot 4.0.2 / Spring Cloud 2025.1, Java 21, WebFlux reactive.** The build is a
+  child of the org metapom **`snapdragon-parent` 2.0.0** (which itself rides Boot 4), so
+  the reactive-BFF dependency + plugin baseline is inherited, not duplicated here.
+- **Shared security/tenancy via `snapdragon-commons` 2.0.0** (`systems.snapdragon.commons.*`).
+  This BFF's former local copies of `security.{Roles,CasdoorAuthorities,DomainRegistry,DomainScope}`,
+  `config.TenancyResourceServerConfig` and `web.ApiException` were deleted and now come
+  from commons (version managed by the parent). This BFF does **not** depend on
+  `snapdragon-auth-core` — that artifact carries account/session/MFA/Casdoor-admin infra
+  and is consumed only by `user-bff` + `admin-bff`; tube-bff owns no login/session/account
+  surface (it only connects Google for `youtube.readonly` on behalf of an
+  already-authenticated principal).
+- **Place in the auth model.** tube-bff is a pure **downstream Casdoor-JWT OAuth2 resource
+  server** reached only through the gateway. The browser holds an OPAQUE `bff_`-prefixed
+  session and never its Casdoor JWT; the gateway's pre-security exchange filter swaps
+  `bff_` → the internal custody JWT before proxying, so this BFF always receives a normal
+  validated Casdoor JWT and its authorities/issuer→domain logic runs unchanged. The
+  platform's login/session relocation (admin-bff → user-bff) and the auth-core extraction
+  do **not** touch this repo. Authorization upstream is data-driven by the gateway's
+  `gateway_route_access` table; the base `ROLE_TUBE` row is the route-access floor before
+  any handler here runs.
+- **Data access** is Spring Data R2DBC reactive repositories (Liquibase migrates over a
+  JDBC datasource; runtime is R2DBC) — no raw SQL strings / inline `@Query`.
+- **CI is GitLab** (`.gitlab-ci.yml`); there are **no** GitHub Actions. The GitHub repo is
+  pull-mirrored into in-cluster GitLab.
+
+Functionally, everything in [Capabilities](#capabilities-what-is-on-main) (PR2–PR5 + the
+default-deny `/sign` gate + the GitLab pentest stage) is ✅ shipped on `main`; the byte
+plane (tube-media sidecar), the yt-dlp runner, the tube-ui remote and the wider PR8 admin
+surface remain 🔭 external / planned (see below).
+
 ## What this BFF owns
 
 This service is the **control plane** for the tube service — it owns the may-use
@@ -185,6 +219,19 @@ CI = GitLab (`.gitlab-ci.yml`). The GitHub repo is pull-mirrored into in-cluster
 > repo's pipeline yet (SCA + DAST baseline are).
 
 Build + test locally: `./mvnw -DskipITs test`.
+
+## Roadmap
+
+This repo tracks the platform's tube-service slice of the wider Snapdragon roadmap. The
+immediate, repo-local follow-ups are enumerated under
+[Roadmap / not yet in this repo](#roadmap--not-yet-in-this-repo) below. Platform-wide
+initiatives this BFF will plug into as they land: SSO-end-to-end-live (the gateway
+`bff_`-session exchange this BFF already sits behind), MFA / step-up for privileged tube
+governance ops, encrypted versioned backups of the tube data + content PVC, per-node
+attached storage for the GPU host that runs the byte plane, and the multi-tenancy
+superadmin (per-domain enable of the tube optional service). A/V-adjacent media remains
+LAN-only until the platform TURN/SFU work lands; tube serves owner-private archived bytes,
+not live A/V.
 
 ## Roadmap / not yet in this repo
 
