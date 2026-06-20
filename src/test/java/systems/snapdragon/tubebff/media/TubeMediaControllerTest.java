@@ -3,7 +3,8 @@ package systems.snapdragon.tubebff.media;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
+import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
@@ -20,6 +21,7 @@ import java.util.Base64;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockJwt;
+import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.springSecurity;
 
 /**
  * Reactive @WebFluxTest for {@link TubeMediaController} — exercises the
@@ -64,7 +66,9 @@ class TubeMediaControllerTest {
         }
     }
 
-    @Autowired WebTestClient web;
+    @Autowired ApplicationContext context;
+
+    WebTestClient web;
 
     @MockitoBean ReactiveJwtDecoder jwtDecoder;
 
@@ -75,6 +79,10 @@ class TubeMediaControllerTest {
 
     @BeforeEach
     void allowUseByDefault() {
+        // Bind the WebTestClient to the slice's application context WITH the Spring Security
+        // configurer applied, so the mockJwt()/mockUser() mutators actually take effect
+        // (Boot-4 / SS7 no longer auto-applies springSecurity() to the autowired client).
+        web = WebTestClient.bindToApplicationContext(context).apply(springSecurity()).build();
         // Most tests assert the path-safety / owner-two-wall behaviour AFTER the use gate,
         // so default the gate to ALLOW (an empty Mono = "use permitted").
         when(useGate.assertCanUse(any())).thenReturn(Mono.empty());

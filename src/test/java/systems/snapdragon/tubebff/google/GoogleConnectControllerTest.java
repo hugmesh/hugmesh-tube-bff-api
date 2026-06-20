@@ -1,8 +1,10 @@
 package systems.snapdragon.tubebff.google;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
+import org.springframework.context.ApplicationContext;
+import org.springframework.boot.webflux.test.autoconfigure.WebFluxTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
@@ -19,6 +21,7 @@ import java.time.Instant;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockJwt;
+import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.springSecurity;
 
 /**
  * {@link GoogleConnectController} gating + contract (@WebFluxTest). Proves, per the test
@@ -45,7 +48,14 @@ import static org.springframework.security.test.web.reactive.server.SecurityMock
 @Import({SecurityConfig.class, ApiExceptionHandler.class})
 class GoogleConnectControllerTest {
 
-    @Autowired WebTestClient web;
+    @Autowired ApplicationContext context;
+
+    WebTestClient web;
+
+    @BeforeEach
+    void setUp() {
+        web = WebTestClient.bindToApplicationContext(context).apply(springSecurity()).build();
+    }
 
     @MockitoBean TubeAccessGuard useGate;
     @MockitoBean GoogleConnectService connect;

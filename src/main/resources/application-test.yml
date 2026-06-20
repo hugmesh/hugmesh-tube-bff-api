@@ -1,17 +1,11 @@
-# Test profile overrides. Slice tests provide their own H2-PG-compat DataSource +
-# R2DBC ConnectionFactory + Liquibase via TestDatabaseConfig (mirroring owncast-bff /
-# wiki-bff / forum-bff / user-bff / federation-api), so the production Postgres R2DBC +
-# Liquibase auto-config is disabled here. The context-load test runs a JWT-decoder mock
-# so no live Casdoor is needed.
-spring:
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.r2dbc.R2dbcAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.r2dbc.R2dbcDataAutoConfiguration
-      - org.springframework.boot.autoconfigure.r2dbc.R2dbcTransactionManagerAutoConfiguration
-      - org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration
-  liquibase:
-    enabled: false
+# Test profile overrides (full-context tests only — the @DataR2dbcTest / @WebFluxTest
+# slices do not activate this profile). The full-context tests
+# (TubeBffApplicationContextTest / OpenApiSpecDumpTest) extend the commons
+# PostgresTestSupport base, which auto-wires the production Postgres R2DBC + Liquibase
+# auto-config against a fresh per-class Testcontainers Postgres database — so NO
+# autoconfig excludes here (the old H2 dual-connection excludes were the Boot-3
+# workaround the Testcontainers base replaces). The context-load test runs a JWT-decoder
+# mock so no live Casdoor is needed.
 
 # TEST-ONLY non-secret keys so the context starts (TokenCipher / GoogleConnectState
 # fail-closed on a missing/short key at construction). These are deterministic,

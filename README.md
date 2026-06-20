@@ -5,7 +5,7 @@ SERVICE (self-hosted personal YouTube archival: a user connects Google, their su
 channels sync to a DB, and yt-dlp downloads new videos on a schedule for owner-private
 in-platform viewing). Twin of `snapdragon-owncast-bff-api` / `snapdragon-wiki-bff-api`
 (Java 21 WebFlux + R2DBC Postgres + Liquibase + Casdoor JWT resource server, package
-`systems.snapdragon.tubebff`, artifact `tube-bff` 0.1.0, Spring Boot 3.5.5).
+`systems.snapdragon.tubebff`, artifact `tube-bff` 0.1.0, Spring Boot 4.0.2).
 
 > **State convention:** ✅ shipped (on `main`) · 🚧 in-flight (open branch/PR) ·
 > 🔭 planned (design only, no code in this repo). See the
