@@ -176,6 +176,13 @@ public class SecurityConfig {
         // Declared BEFORE the /bff/tube/** floor so this ROLE_TUBE rule wins for these.
         ex.pathMatchers("/bff/tube/google-connect/**").hasRole("TUBE");
         ex.pathMatchers("/bff/tube/subscriptions/**").hasRole("TUBE");
+        // The media-token VERIFY endpoint is the tube-media nginx sidecar's auth_request
+        // target — a PUBLIC, constant-time HMAC+expiry check (the signed token IS the
+        // credential; the internal subrequest carries NO JWT). It returns only 200/403 with
+        // an empty body and leaks nothing. Declared BEFORE the /bff/tube/** .authenticated()
+        // floor so the floor does not 401 the token-less subrequest. Only /verify is public —
+        // /sign and the rest of /bff/tube/media/** stay under the authenticated floor.
+        ex.pathMatchers("/bff/tube/media/verify").permitAll();
         // The rest of the tube surface — the ROLE_TUBE floor is enforced at the
         // gateway, so .authenticated() proves authentication here. The exact use
         // decision (an active grant AND NOT an active ban, SUPERADMIN exempt) is enforced

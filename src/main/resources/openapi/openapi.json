@@ -196,7 +196,7 @@
     "/bff/tube/admin/access/timeout" : {
       "post" : {
         "tags" : [ "Tube Use Access" ],
-        "summary" : "TIMEOUT a USER from the tube service for a bounded window (an active banned override with a future expires_at; auto-restores on expiry). ADMIN/SUPERADMIN, own-brand.",
+        "summary" : "TIMEOUT a USER from the tube service for a bounded window (an active banned override with a future expires_at; auto-restores on expiry without a write). ADMIN/SUPERADMIN, own-brand. Idempotent if already active.",
         "operationId" : "timeoutUseAccess",
         "requestBody" : {
           "content" : {
@@ -225,7 +225,7 @@
     "/bff/tube/admin/access/grant" : {
       "post" : {
         "tags" : [ "Tube Use Access" ],
-        "summary" : "GRANT a USER permanent may-use access (an active tube_access use override) — the way to lift a user above the default-deny use floor. ADMIN/SUPERADMIN, own-brand.",
+        "summary" : "GRANT a USER permanent may-use access (an active tube_access use override) — the way to lift a user above the default-deny use floor. ADMIN/SUPERADMIN, own-brand. Idempotent if already active.",
         "operationId" : "grantUseAccess",
         "requestBody" : {
           "content" : {
@@ -254,7 +254,7 @@
     "/bff/tube/admin/access/ban" : {
       "post" : {
         "tags" : [ "Tube Use Access" ],
-        "summary" : "BAN a USER from the tube service permanently (an active banned override, expires_at NULL). Denies even an active grantee (ban>grant). ADMIN/SUPERADMIN, own-brand.",
+        "summary" : "BAN a USER from the tube service permanently (an active banned override, expires_at NULL). Denies even an active grantee (ban>grant). Must be revoked explicitly. ADMIN/SUPERADMIN, own-brand.",
         "operationId" : "banUseAccess",
         "requestBody" : {
           "content" : {
@@ -283,7 +283,7 @@
     "/bff/tube/superadmin/access" : {
       "get" : {
         "tags" : [ "Tube Use Access" ],
-        "summary" : "List all ACTIVE tube_access overrides (scoped to the caller's brand; SUPERADMIN sees all). SUPERADMIN.",
+        "summary" : "List all ACTIVE tube_access overrides (scoped to the caller's brand; SUPERADMIN sees all brands). SUPERADMIN only.",
         "operationId" : "listActiveUseAccess",
         "responses" : {
           "200" : {
@@ -302,7 +302,7 @@
     "/bff/tube/superadmin/access/{userSubject}/history" : {
       "get" : {
         "tags" : [ "Tube Use Access" ],
-        "summary" : "The full grant/timeout/ban HISTORY (active + revoked = audit) for a principal (scoped to the caller's brand; SUPERADMIN sees all). SUPERADMIN.",
+        "summary" : "The full grant/timeout/ban HISTORY (active + revoked = audit trail) for a principal (scoped to the caller's brand; SUPERADMIN sees all). Revoked rows are retained (never deleted). SUPERADMIN only.",
         "operationId" : "useAccessHistory",
         "parameters" : [ {
           "name" : "userSubject",
@@ -341,6 +341,54 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/bff/tube/media/verify" : {
+      "get" : {
+        "tags" : [ "Tube Media Signing" ],
+        "summary" : "Verify a signed media URL for the tube-media nginx sidecar's auth_request. PUBLIC — no JWT (the HMAC signature is the credential). 200 if the signature is valid AND unexpired for (sub, domain, path, exp); 403 (empty body) otherwise. Fail-closed and non-leaking on any missing/malformed parameter.",
+        "operationId" : "verifyMediaUrl",
+        "parameters" : [ {
+          "name" : "path",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "sig",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "exp",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "sub",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "domain",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK"
           }
         }
       }
@@ -447,7 +495,7 @@
     "/bff/tube/admin/access/{accessType}/{userSubject}" : {
       "delete" : {
         "tags" : [ "Tube Use Access" ],
-        "summary" : "RESTORE/REVOKE: lift the active override of a type for a user (CAS active->revoked; the row is retained = audit). accessType = use|banned: revoke 'banned' to restore use; revoke 'use' to remove a grant. ADMIN/SUPERADMIN, own-brand.",
+        "summary" : "RESTORE/REVOKE: CAS active->revoked for one override type for a user (row retained = audit). accessType = use|banned: revoke 'banned' to restore use; revoke 'use' to remove a grant. No-op if no active override exists. ADMIN/SUPERADMIN, own-brand.",
         "operationId" : "revokeUseAccess",
         "parameters" : [ {
           "name" : "accessType",

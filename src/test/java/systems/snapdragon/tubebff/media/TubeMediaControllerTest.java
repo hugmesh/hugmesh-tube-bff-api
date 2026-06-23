@@ -68,6 +68,11 @@ class TubeMediaControllerTest {
 
     @Autowired ApplicationContext context;
 
+    /** The real token service (TubeMediaTestConfig) — used by the /verify tests to MINT a
+     *  genuine signed query string, then assert the public verify endpoint accepts it and
+     *  rejects every tampered variant. */
+    @Autowired TubeMediaTokenService tokenService;
+
     WebTestClient web;
 
     @MockitoBean ReactiveJwtDecoder jwtDecoder;
@@ -233,5 +238,90 @@ class TubeMediaControllerTest {
         web.get().uri("/bff/tube/media/sign?path=/default/alice/videos/vid.mp4")
                 .exchange()
                 .expectStatus().isUnauthorized();
+    }
+
+    // ── /verify — the PUBLIC nginx auth_request target (HMAC is the credential) ──
+
+    /** Pull a single value out of the {@code sig=..&exp=..&sub=..&domain=..} query string
+     *  the token service returns, URL-decoding it back to its raw form. */
+    private static String qsParam(String qs, String key) {
+        for (String pair : qs.split("&")) {
+            int eq = pair.indexOf('=');
+            if (eq > 0 && pair.substring(0, eq).equals(key)) {
+                return java.net.URLDecoder.decode(
+                        pair.substring(eq + 1), java.nio.charset.StandardCharsets.UTF_8);
+            }
+        }
+        return null;
+    }
+
+    @Test
+    void verify_validSignature_returns200_evenWithoutAJwt() {
+        // PUBLIC: no mockJwt() is applied — the signed token is the only credential.
+        String path = "/default/alice/videos/vid.mp4";
+        String qs = tokenService.sign("alice", "default", path);
+        web.get().uri(b -> b.path("/bff/tube/media/verify")
+                        .queryParam("path", path)
+                        .queryParam("sig", qsParam(qs, "sig"))
+                        .queryParam("exp", qsParam(qs, "exp"))
+                        .queryParam("sub", "alice")
+                        .queryParam("domain", "default")
+                        .build())
+                .exchange()
+                .expectStatus().isOk();
+    }
+
+    @Test
+    void verify_tamperedSignature_returns403() {
+        String path = "/default/alice/videos/vid.mp4";
+        String qs = tokenService.sign("alice", "default", path);
+        web.get().uri(b -> b.path("/bff/tube/media/verify")
+                        .queryParam("path", path)
+                        .queryParam("sig", "AAAAtampered-signature-AAAA")
+                        .queryParam("exp", qsParam(qs, "exp"))
+                        .queryParam("sub", "alice")
+                        .queryParam("domain", "default")
+                        .build())
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    @Test
+    void verify_signatureBoundToDifferentPath_returns403() {
+        // sig minted for vid.mp4 cannot authorise a different content path (HMAC binds path).
+        String qs = tokenService.sign("alice", "default", "/default/alice/videos/vid.mp4");
+        web.get().uri(b -> b.path("/bff/tube/media/verify")
+                        .queryParam("path", "/default/alice/videos/OTHER.mp4")
+                        .queryParam("sig", qsParam(qs, "sig"))
+                        .queryParam("exp", qsParam(qs, "exp"))
+                        .queryParam("sub", "alice")
+                        .queryParam("domain", "default")
+                        .build())
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    @Test
+    void verify_signatureBoundToDifferentSubject_returns403() {
+        // sig minted for alice cannot authorise bob (HMAC binds the owner subject).
+        String path = "/default/alice/videos/vid.mp4";
+        String qs = tokenService.sign("alice", "default", path);
+        web.get().uri(b -> b.path("/bff/tube/media/verify")
+                        .queryParam("path", path)
+                        .queryParam("sig", qsParam(qs, "sig"))
+                        .queryParam("exp", qsParam(qs, "exp"))
+                        .queryParam("sub", "bob")
+                        .queryParam("domain", "default")
+                        .build())
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    @Test
+    void verify_missingParameters_returns403_failClosed() {
+        // No sig/exp/sub/domain — fail-closed deny, not a 400.
+        web.get().uri("/bff/tube/media/verify?path=/default/alice/videos/vid.mp4")
+                .exchange()
+                .expectStatus().isForbidden();
     }
 }

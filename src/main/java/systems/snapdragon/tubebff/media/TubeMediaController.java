@@ -2,6 +2,7 @@ package systems.snapdragon.tubebff.media;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -49,10 +50,13 @@ import java.util.regex.Pattern;
  * character beyond {@code /}, {@code .}, and {@code -}. A path that does not match is
  * rejected 400 so path traversal attempts never reach the signing step.
  *
- * <p><b>Route.</b> Mounted under {@code /bff/tube/media/**} — inside the
+ * <p><b>Route.</b> Mounted under {@code /bff/tube/media/**} — {@code /sign} sits inside the
  * {@code .authenticated()} floor declared in
- * {@link systems.snapdragon.tubebff.config.SecurityConfig}. The method-level
- * {@code @PreAuthorize("isAuthenticated()")} is defence-in-depth.
+ * {@link systems.snapdragon.tubebff.config.SecurityConfig} (the method-level
+ * {@code @PreAuthorize("isAuthenticated()")} is defence-in-depth). The ONE exception is
+ * {@code /verify}, which {@code SecurityConfig} marks {@code permitAll}: it is the
+ * tube-media nginx sidecar's {@code auth_request} target and carries no JWT — the HMAC
+ * signature minted by {@code /sign} is its sole credential.
  */
 @Tag(name = "Tube Media Signing",
         description = "Short-TTL HMAC-signed media URLs for the tube-media Nginx sidecar. "
@@ -135,6 +139,74 @@ public class TubeMediaController {
         // are not invoked until the gate completes (Mono.defer).
         return useGate.assertCanUse(auth)
                 .then(Mono.defer(() -> signGranted(path, auth)));
+    }
+
+    /** 200 (allow) for the nginx auth_request subrequest — empty body. */
+    private static final Mono<ResponseEntity<Void>> ALLOW =
+            Mono.just(ResponseEntity.ok().<Void>build());
+    /** 403 (deny) for the nginx auth_request subrequest — empty, non-leaking body. */
+    private static final Mono<ResponseEntity<Void>> DENY =
+            Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN).<Void>build());
+
+    /**
+     * Verify a signed media URL — the {@code auth_request} target for the tube-media
+     * nginx serving sidecar.
+     *
+     * <p><b>PUBLIC by design.</b> This is the one route under {@code /bff/tube/media/**}
+     * that {@link systems.snapdragon.tubebff.config.SecurityConfig} marks {@code permitAll}:
+     * the sidecar's internal {@code auth_request} subrequest carries NO user bearer, so the
+     * short-TTL HMAC signature minted by {@link #sign} IS the credential. The default-deny
+     * use gate and the owner two-wall were already enforced at SIGN time; here we only
+     * re-check that the signature is authentic and unexpired for the exact
+     * {@code (sub, domain, path, exp)} tuple it was minted over.
+     *
+     * <p><b>Fail-closed + non-leaking.</b> A missing/blank parameter, an unparseable
+     * {@code exp}, an expired token, or a bad signature ALL return {@code 403} with an empty
+     * body; only a valid, unexpired signature returns {@code 200}. nginx {@code auth_request}
+     * treats {@code 2xx} as allow and everything else as deny, so a single 403 for every
+     * failure mode keeps this from becoming an oracle.
+     *
+     * <p><b>Constant-time.</b> The HMAC comparison is constant-time
+     * ({@link TubeMediaTokenService#verify} → {@code MessageDigest.isEqual}).
+     *
+     * @param path   the content path that was signed (e.g. {@code /acme/alice/videos/vid.mp4})
+     * @param sig    the {@code sig} query parameter (base64url HMAC)
+     * @param exp    the {@code exp} query parameter (epoch millis)
+     * @param sub    the {@code sub} query parameter (owner subject the token was bound to)
+     * @param domain the {@code domain} query parameter (brand the token was bound to)
+     */
+    @Operation(operationId = "verifyMediaUrl",
+            summary = "Verify a signed media URL for the tube-media nginx sidecar's auth_request. "
+            + "PUBLIC — no JWT (the HMAC signature is the credential). 200 if the signature is "
+            + "valid AND unexpired for (sub, domain, path, exp); 403 (empty body) otherwise. "
+            + "Fail-closed and non-leaking on any missing/malformed parameter.")
+    @GetMapping("/verify")
+    public Mono<ResponseEntity<Void>> verify(
+            @RequestParam(required = false) String path,
+            @RequestParam(required = false) String sig,
+            @RequestParam(required = false) String exp,
+            @RequestParam(required = false) String sub,
+            @RequestParam(required = false) String domain) {
+        // Fail-closed: a missing/blank field is a DENY (403), not a 400 — nginx
+        // auth_request only distinguishes 2xx (allow) from non-2xx (deny), and a uniform
+        // 403 keeps a malformed probe indistinguishable from a forged signature.
+        if (isBlank(path) || isBlank(sig) || isBlank(exp) || isBlank(sub) || isBlank(domain)) {
+            return DENY;
+        }
+        long expMillis;
+        try {
+            expMillis = Long.parseLong(exp);
+        } catch (NumberFormatException e) {
+            return DENY;   // unparseable expiry — reject
+        }
+        // Expiry + constant-time HMAC check live in the token service (the same code the
+        // sign side uses), so verify stays byte-symmetric with sign.
+        return tokenService.verify(sub, domain, path, sig, expMillis) ? ALLOW : DENY;
+    }
+
+    /** Null/blank guard for the verify query parameters (fail-closed). */
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
     }
 
     /**
