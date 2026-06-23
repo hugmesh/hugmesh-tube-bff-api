@@ -108,20 +108,37 @@ public class TubeMediaTokenService {
         return MessageDigest.isEqual(expected, provided);
     }
 
-    // ── internal ──────────────────────────────────────────────────────────────
+    // ---- Internal helpers ----
 
-    /** Compute HMAC-SHA256 over {@code "${sub}|${domain}|${path}|${exp}"}. */
+    /**
+     * Compute HMAC-SHA256 over the canonical token input string
+     * {@code "${sub}|${domain}|${path}|${exp}"} (UTF-8 bytes). The four-field input
+     * binds the MAC to one user, one brand, one path, and one expiry so neither cross-
+     * user reuse nor expiry extension is possible without the key.
+     *
+     * @param sub    the owner subject
+     * @param domain the brand
+     * @param path   the content path
+     * @param exp    the expiry epoch-millis
+     * @return the 32-byte HMAC-SHA256 output
+     */
     private byte[] hmac(String sub, String domain, String path, long exp) {
         try {
             Mac mac = Mac.getInstance(HMAC_ALG);
             mac.init(new SecretKeySpec(keyBytes, HMAC_ALG));
-            String input = sub + "|" + domain + "|" + path + "|" + exp;
+            String input = "%s|%s|%s|%d".formatted(sub, domain, path, exp);
             return mac.doFinal(input.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
             throw new IllegalStateException("HMAC-SHA256 failed (JCA misconfiguration)", e);
         }
     }
 
+    /**
+     * URL-encode a string using UTF-8, for safe embedding in query parameters.
+     *
+     * @param s the value to encode
+     * @return the percent-encoded string
+     */
     private static String urlEncode(String s) {
         return URLEncoder.encode(s, StandardCharsets.UTF_8);
     }
