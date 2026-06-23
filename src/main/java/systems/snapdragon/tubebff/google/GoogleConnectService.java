@@ -64,20 +64,27 @@ public class GoogleConnectService {
      * re-bind them.
      */
     public Mono<String> authorizeUrl(Authentication auth) {
+        // Resolve the owner, then build the signed consent URL for the Google OAuth flow.
         return Mono.fromCallable(() -> owner.resolve(auth))
-                .map(o -> {
-                    String signedState = state.sign(o.subject(), o.domain());
-                    return UriComponentsBuilder.fromUriString(AUTH_ENDPOINT)
-                            .queryParam("client_id", props.getClientId())
-                            .queryParam("redirect_uri", props.getRedirectUri())
-                            .queryParam("response_type", "code")
-                            .queryParam("scope", SCOPE)
-                            .queryParam("access_type", "offline")   // -> a refresh token
-                            .queryParam("prompt", "consent")        // force re-consent so a refresh token is re-issued
-                            .queryParam("include_granted_scopes", "true")
-                            .queryParam("state", signedState)
-                            .build(true).toUriString();
-                });
+                .map(o -> buildAuthorizeUrl(o.subject(), o.domain()));
+    }
+
+    /**
+     * Build the Google consent URL with a SIGNED state that binds the acting subject + brand.
+     * The state is both the CSRF token and the principal binder for the bearer-less callback.
+     */
+    private String buildAuthorizeUrl(String subject, String domain) {
+        String signedState = state.sign(subject, domain);
+        return UriComponentsBuilder.fromUriString(AUTH_ENDPOINT)
+                .queryParam("client_id", props.getClientId())
+                .queryParam("redirect_uri", props.getRedirectUri())
+                .queryParam("response_type", "code")
+                .queryParam("scope", SCOPE)
+                .queryParam("access_type", "offline")   // -> a refresh token
+                .queryParam("prompt", "consent")        // force re-consent so a refresh token is re-issued
+                .queryParam("include_granted_scopes", "true")
+                .queryParam("state", signedState)
+                .build(true).toUriString();
     }
 
     /**
@@ -90,20 +97,29 @@ public class GoogleConnectService {
      *             is still verified against the resolved owner so the two must agree.
      */
     public Mono<TubeGoogleLink> callback(String code, String stateParam, Authentication auth) {
+        // Resolve the owner, then verify the signed state and exchange the authorization code.
         return Mono.fromCallable(() -> owner.resolve(auth))
-                .flatMap(o -> {
-                    // CSRF + principal binding: the signed state must verify against the
-                    // subject+brand we resolved for this request. Reject (no code exchange)
-                    // on tamper/expiry/cross-principal.
-                    if (!state.verify(stateParam, o.subject(), o.domain())) {
-                        return Mono.error(ApiException.forbidden("invalid OAuth state"));
-                    }
-                    if (code == null || code.isBlank()) {
-                        return Mono.error(ApiException.badRequest("missing authorization code"));
-                    }
-                    return google.exchangeCode(code)
-                            .flatMap(tok -> persist(o, tok));
-                });
+                .flatMap(o -> verifyAndExchange(o, code, stateParam));
+    }
+
+    /**
+     * Verify the signed OAuth state against the resolved owner (CSRF + principal binding),
+     * then exchange the authorization code and persist the encrypted link.
+     */
+    private Mono<TubeGoogleLink> verifyAndExchange(PersonalOwner.Owner o, String code,
+                                                    String stateParam) {
+        // CSRF + principal binding: the signed state must verify against the
+        // subject+brand we resolved for this request. Reject (no code exchange)
+        // on tamper/expiry/cross-principal.
+        if (!state.verify(stateParam, o.subject(), o.domain())) {
+            return Mono.error(ApiException.forbidden("invalid OAuth state"));
+        }
+        if (code == null || code.isBlank()) {
+            return Mono.error(ApiException.badRequest("missing authorization code"));
+        }
+        // Exchange the code for tokens, then encrypt and persist the link.
+        return google.exchangeCode(code)
+                .flatMap(tok -> persist(o, tok));
     }
 
     private Mono<TubeGoogleLink> persist(PersonalOwner.Owner o, GoogleApiClient.TokenResponse tok) {

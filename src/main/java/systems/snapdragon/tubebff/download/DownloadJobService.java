@@ -115,25 +115,39 @@ public class DownloadJobService {
      */
     public Mono<DownloadJob> report(String jobId, String workerId, String result,
                                     long bytes, String contentPath, String error) {
-        return jobs.findById(jobId).flatMap(job -> {
-            String r = result == null ? "" : result.trim().toLowerCase();
-            return switch (r) {
-                case DownloadJob.STATE_DONE -> jobs.markDone(jobId, workerId, bytes, contentPath)
-                        .flatMap(rows -> rows != null && rows > 0
-                                // Account the bytes against the owner's budget ONLY when this
-                                // worker's markDone actually landed (so a stale/lost report
-                                // never double-counts).
-                                ? usage.addUsage(job.userSubject(), job.domain(), bytes)
-                                        .then(jobs.findById(jobId))
-                                : jobs.findById(jobId));
-                case DownloadJob.STATE_FAILED -> jobs.markFailed(jobId, workerId, error)
-                        .then(jobs.findById(jobId));
-                case DownloadJob.STATE_DOWNLOADING -> jobs.markDownloading(jobId, workerId)
-                        .then(jobs.findById(jobId));
-                default -> Mono.error(new IllegalArgumentException(
-                        "result must be one of done|failed|downloading"));
-            };
-        });
+        // Look up the claimed job, then dispatch the worker's result to the appropriate state machine.
+        return jobs.findById(jobId)
+                .flatMap(job -> applyWorkerResult(job, jobId, workerId, result, bytes, contentPath, error));
+    }
+
+    /**
+     * Dispatch a worker's result to the correct state transition — done, failed, or downloading.
+     * Accounting bytes against the owner's storage budget is done ONLY when markDone lands,
+     * so a stale or lost report never double-counts.
+     */
+    private Mono<DownloadJob> applyWorkerResult(DownloadJob job, String jobId, String workerId,
+                                                String result, long bytes, String contentPath,
+                                                String error) {
+        String r = result == null ? "" : result.trim().toLowerCase();
+        return switch (r) {
+            // DONE: stamp bytes + path, then account the bytes against the owner's budget.
+            case DownloadJob.STATE_DONE -> jobs.markDone(jobId, workerId, bytes, contentPath)
+                    .flatMap(rows -> rows != null && rows > 0
+                            // Account the bytes against the owner's budget ONLY when this
+                            // worker's markDone actually landed (so a stale/lost report
+                            // never double-counts).
+                            ? usage.addUsage(job.userSubject(), job.domain(), bytes)
+                                    .then(jobs.findById(jobId))
+                            : jobs.findById(jobId));
+            // FAILED: stamp last_error and return the updated job.
+            case DownloadJob.STATE_FAILED -> jobs.markFailed(jobId, workerId, error)
+                    .then(jobs.findById(jobId));
+            // DOWNLOADING: mark progress and return the updated job.
+            case DownloadJob.STATE_DOWNLOADING -> jobs.markDownloading(jobId, workerId)
+                    .then(jobs.findById(jobId));
+            default -> Mono.error(new IllegalArgumentException(
+                    "result must be one of done|failed|downloading"));
+        };
     }
 
     // ── owner derivation (the security-critical seam) ──────────────────────────

@@ -10,6 +10,7 @@ import systems.snapdragon.commons.security.Roles;
 import systems.snapdragon.commons.web.ApiException;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
  * THE LOAD-BEARING enforcement of the use grant/timeout/ban overlay: it resolves
@@ -75,26 +76,35 @@ public class TubeAccessGuard {
 
         // Load the principal's ACTIVE overrides for THEIR brand and apply the precedence.
         return repo.activeFor(subject, domain)
-                .filter(a -> a.isEffectiveAt(now))   // an expired timeout auto-restores (ignored)
+                // An expired timeout auto-restores — skip rows whose effective window has closed.
+                .filter(a -> a.isEffectiveAt(now))
+                // Collect all active rows so the ban-vs-grant precedence decision sees the full set.
                 .collectList()
-                .flatMap(rows -> {
-                    boolean banned = rows.stream()
-                            .anyMatch(a -> TubeAccess.TYPE_BANNED.equals(a.accessType()));
-                    boolean granted = rows.stream()
-                            .anyMatch(a -> TubeAccess.TYPE_USE.equals(a.accessType()));
-                    // PRECEDENCE: an active ban/timeout denies even a grantee (ban > grant).
-                    if (banned) {
-                        return Mono.error(ApiException.forbidden(
-                                "tube use is banned for this principal in this brand"));
-                    }
-                    // DEFAULT-DENY + GRANT-ONLY: allowed ONLY when an active use grant
-                    // exists — the bare ROLE_TUBE floor does not substitute for it.
-                    if (granted) {
-                        return Mono.empty();
-                    }
-                    return Mono.error(ApiException.forbidden(
-                            "tube use requires an active grant (default-deny)"));
-                });
+                // Apply DEFAULT-DENY + ban-wins-over-grant precedence to the active row set.
+                .flatMap(TubeAccessGuard::applyAccessPrecedence);
+    }
+
+    /**
+     * Apply the ban-wins-over-grant DEFAULT-DENY precedence rule to the caller's active
+     * overlay rows. An active ban/timeout denies even a grantee; no grant means denied.
+     */
+    private static Mono<Void> applyAccessPrecedence(List<TubeAccess> rows) {
+        boolean banned = rows.stream()
+                .anyMatch(a -> TubeAccess.TYPE_BANNED.equals(a.accessType()));
+        boolean granted = rows.stream()
+                .anyMatch(a -> TubeAccess.TYPE_USE.equals(a.accessType()));
+        // PRECEDENCE: an active ban/timeout denies even a grantee (ban > grant).
+        if (banned) {
+            return Mono.error(ApiException.forbidden(
+                    "tube use is banned for this principal in this brand"));
+        }
+        // DEFAULT-DENY + GRANT-ONLY: allowed ONLY when an active use grant
+        // exists — the bare ROLE_TUBE floor does not substitute for it.
+        if (granted) {
+            return Mono.empty();
+        }
+        return Mono.error(ApiException.forbidden(
+                "tube use requires an active grant (default-deny)"));
     }
 
     /** SUPERADMIN read from either the JWT roles claim (runtime shape) or the converted

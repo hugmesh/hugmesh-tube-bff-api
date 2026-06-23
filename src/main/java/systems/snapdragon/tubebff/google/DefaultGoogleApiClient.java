@@ -85,23 +85,31 @@ public class DefaultGoogleApiClient implements GoogleApiClient {
     @Override
     @SuppressWarnings("unchecked")
     public Mono<SubscriptionsPage> listSubscriptions(String accessToken, String pageToken) {
-        return web.get().uri(b -> {
-                    var ub = java.net.URI.create(SUBSCRIPTIONS_URI);
-                    var builder = org.springframework.web.util.UriComponentsBuilder.fromUri(ub)
-                            .queryParam("part", "snippet")
-                            .queryParam("mine", "true")
-                            .queryParam("maxResults", "50");
-                    if (pageToken != null && !pageToken.isBlank()) {
-                        builder.queryParam("pageToken", pageToken);
-                    }
-                    return builder.build(true).toUri();
-                })
+        // Build the subscriptions URI with pagination, then fetch and map the response page.
+        return web.get().uri(b -> buildSubscriptionsUri(pageToken))
                 .headers(h -> h.setBearerAuth(accessToken))
                 .retrieve()
                 .onStatus(s -> s.isError(), r -> Mono.error(
                         ApiException.badGateway("google subscriptions list failed")))
                 .bodyToMono(Map.class)
                 .map(this::toSubscriptionsPage);
+    }
+
+    /**
+     * Build the YouTube subscriptions list URI, appending the pagination token when present.
+     * The URI is pre-built (no UriBuilder template variables) so build(true) is used to
+     * preserve any already-encoded characters.
+     */
+    private static java.net.URI buildSubscriptionsUri(String pageToken) {
+        var ub = java.net.URI.create(SUBSCRIPTIONS_URI);
+        var builder = org.springframework.web.util.UriComponentsBuilder.fromUri(ub)
+                .queryParam("part", "snippet")
+                .queryParam("mine", "true")
+                .queryParam("maxResults", "50");
+        if (pageToken != null && !pageToken.isBlank()) {
+            builder.queryParam("pageToken", pageToken);
+        }
+        return builder.build(true).toUri();
     }
 
     @Override

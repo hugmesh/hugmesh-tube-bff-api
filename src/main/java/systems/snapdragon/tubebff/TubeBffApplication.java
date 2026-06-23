@@ -45,6 +45,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * overlay + the default-deny guard only.
  */
 @SpringBootApplication
+@SuppressWarnings("checkstyle:HideUtilityClassConstructor")
 public class TubeBffApplication {
     public static void main(String[] args) {
         SpringApplication.run(TubeBffApplication.class, args);
