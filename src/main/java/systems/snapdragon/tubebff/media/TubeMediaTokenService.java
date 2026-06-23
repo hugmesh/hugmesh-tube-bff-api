@@ -36,7 +36,7 @@ import java.util.Base64;
  * comparison so timing cannot leak the expected MAC byte-by-byte.
  */
 @Service
-public class TubeMediaTokenService {
+public final class TubeMediaTokenService {
 
     /** 5-minute short TTL in milliseconds. */
     static final long TTL_MILLIS = 300_000L;
