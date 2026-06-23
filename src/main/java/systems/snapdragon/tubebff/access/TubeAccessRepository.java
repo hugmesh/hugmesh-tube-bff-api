@@ -7,7 +7,6 @@ import systems.snapdragon.commons.security.DomainRegistry;
 import systems.snapdragon.commons.tenancy.DomainScope;
 
 import java.time.Instant;
-import java.util.UUID;
 
 /**
  * Reactive (R2DBC) store for {@code tube_access} — the use grant/timeout/ban OVERLAY's
@@ -44,11 +43,15 @@ public class TubeAccessRepository {
      */
     public Mono<TubeAccess> insertActive(String userSubject, String accessType, Instant expiresAt,
                                          String reason, String grantedBy, String domain) {
-        String id = UUID.randomUUID().toString();
         String dom = DomainScope.isUnscoped(domain) ? DomainRegistry.DEFAULT_DOMAIN : domain;
-        TubeAccess row = new TubeAccess(id, dom, userSubject, accessType,
-                TubeAccess.STATE_ACTIVE, grantedBy, reason, Instant.now(), expiresAt, null);
-        return repo.save(row).thenReturn(row);
+        Instant createdAt = Instant.now();
+        // The id is DB-generated ((gen_random_uuid())::text DEFAULT, changelog 008): the
+        // INSERT omits it and RETURNING id hands back the generated id, which we render into
+        // the returned row (every other field unchanged from the former app-minted insert).
+        return repo.insertReturningId(dom, userSubject, accessType, TubeAccess.STATE_ACTIVE,
+                        grantedBy, reason, createdAt, expiresAt, null)
+                .map(id -> new TubeAccess(id, dom, userSubject, accessType,
+                        TubeAccess.STATE_ACTIVE, grantedBy, reason, createdAt, expiresAt, null));
     }
 
     /**

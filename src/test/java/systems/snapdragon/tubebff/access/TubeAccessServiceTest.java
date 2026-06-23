@@ -13,7 +13,9 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import systems.snapdragon.commons.security.DomainRegistry;
 import systems.snapdragon.tubebff.security.PrincipalDomain;
-import systems.snapdragon.tubebff.support.TestDatabaseConfig;
+import org.springframework.test.context.ActiveProfiles;
+import systems.snapdragon.commons.testsupport.PostgresTestSupport;
+import systems.snapdragon.tubebff.support.PostgresSliceTestConfig;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -39,8 +41,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  */
 @DataR2dbcTest
-@Import({TestDatabaseConfig.class, TubeAccessRepository.class})
-class TubeAccessServiceTest {
+@Import({PostgresSliceTestConfig.class, TubeAccessRepository.class})
+@ActiveProfiles("test")
+class TubeAccessServiceTest extends PostgresTestSupport {
 
     @Autowired TubeAccessRepository repo;
 

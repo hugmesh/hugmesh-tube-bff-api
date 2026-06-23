@@ -7,6 +7,8 @@ import org.springframework.data.repository.query.Param;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
+
 /**
  * Spring Data R2DBC repository for {@code tube_download_job} — the download WORK-QUEUE
  * (schema in Liquibase {@code db/changelog/005-tube-download-queue.xml}). MATCHES the
@@ -28,6 +30,32 @@ public interface DownloadJobR2dbcRepository extends R2dbcRepository<DownloadJob,
 
     @Query(QUEUED_CANDIDATES)
     Flux<DownloadJob> findQueuedCandidates(@Param("lim") int lim);
+
+    // ── DB-generated UUID PK insert (changelog 008): id is OMITTED so Postgres fills it
+    //    from the (gen_random_uuid())::text column DEFAULT; RETURNING id reads it back. A
+    //    plain (non-@Modifying) @Query returning the new id. The supplied columns are exactly
+    //    the non-id, non-null values the former save(new DownloadJob(id, ...)) persisted
+    //    (claimed_by/claimed_at/last_error/bytes/content_path stay NULL as before; attempts
+    //    starts 0; created_at/updated_at are the same app-stamped instant), so the queued row
+    //    is BYTE-IDENTICAL except the id source. This is ONLY the fresh-INSERT branch — the
+    //    enqueue() find-then-write dedup is unchanged. -->
+    String INSERT_RETURNING_ID = """
+            INSERT INTO tube_download_job \
+            (domain, user_subject, channel_id, video_id, title, state, attempts, \
+             created_at, updated_at) \
+            VALUES (:domain, :userSubject, :channelId, :videoId, :title, :state, 0, \
+             :createdAt, :updatedAt) \
+            RETURNING id""";
+
+    @Query(INSERT_RETURNING_ID)
+    Mono<String> insertReturningId(@Param("domain") String domain,
+                                   @Param("userSubject") String userSubject,
+                                   @Param("channelId") String channelId,
+                                   @Param("videoId") String videoId,
+                                   @Param("title") String title,
+                                   @Param("state") String state,
+                                   @Param("createdAt") Instant createdAt,
+                                   @Param("updatedAt") Instant updatedAt);
 
     // ── guarded-CAS lifecycle transitions ──────────────────────────────────────────
     String CLAIM_ONE =

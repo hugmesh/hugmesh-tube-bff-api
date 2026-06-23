@@ -50,4 +50,13 @@
     <include file="db/changelog/005-tube-download-queue.xml"/>
     <include file="db/changelog/006-tube-subscription.xml"/>
     <include file="db/changelog/007-tube-subscription-download-fields.xml"/>
+
+    <!--
+      008 — DB-generated UUID primary keys (adopt mod-bff #36 / admin-bff #133 pattern).
+      Stops the app minting UUID.randomUUID().toString() for the four PK tables
+      (tube_access, tube_download_job, tube_google_link, tube_subscription); each id column
+      gets a (gen_random_uuid())::text DEFAULT (pgcrypto) and the repository INSERTs omit id
+      and read the generated id back via RETURNING id. Registered LAST.
+    -->
+    <include file="db/changelog/008-db-generated-uuid-pks.xml"/>
 </databaseChangeLog>

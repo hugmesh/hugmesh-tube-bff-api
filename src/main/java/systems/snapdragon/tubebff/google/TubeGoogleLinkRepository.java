@@ -4,7 +4,6 @@ import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
-import java.util.UUID;
 
 /**
  * Reactive (R2DBC) store for {@code tube_google_link} — the per-(brand,user) Google OAuth
@@ -39,10 +38,14 @@ public class TubeGoogleLinkRepository {
     public Mono<TubeGoogleLink> insert(String domain, String userSubject, String googleSub,
                                        String googleEmail, String refreshTokenCiphertext,
                                        String dekId, String scopes) {
-        String id = UUID.randomUUID().toString();
-        TubeGoogleLink row = new TubeGoogleLink(id, domain, userSubject, googleSub, googleEmail,
-                refreshTokenCiphertext, dekId, scopes, Instant.now(), false, null);
-        return repo.save(row).thenReturn(row);
+        Instant connectedAt = Instant.now();
+        // The id is DB-generated ((gen_random_uuid())::text DEFAULT, changelog 008): the
+        // INSERT omits it and RETURNING id hands back the generated id, which we render into
+        // the returned row (every other field unchanged from the former app-minted insert).
+        return repo.insertReturningId(domain, userSubject, googleSub, googleEmail,
+                        refreshTokenCiphertext, dekId, scopes, connectedAt)
+                .map(id -> new TubeGoogleLink(id, domain, userSubject, googleSub, googleEmail,
+                        refreshTokenCiphertext, dekId, scopes, connectedAt, false, null));
     }
 
     /** Soft-revoke the live connection for an owner in their brand (stamps

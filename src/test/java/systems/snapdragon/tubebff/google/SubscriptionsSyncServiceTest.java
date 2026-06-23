@@ -12,7 +12,9 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import systems.snapdragon.commons.security.DomainRegistry;
-import systems.snapdragon.tubebff.support.TestDatabaseConfig;
+import org.springframework.test.context.ActiveProfiles;
+import systems.snapdragon.commons.testsupport.PostgresTestSupport;
+import systems.snapdragon.tubebff.support.PostgresSliceTestConfig;
 import systems.snapdragon.commons.web.ApiException;
 
 import java.time.Instant;
@@ -40,8 +42,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * </ul>
  */
 @DataR2dbcTest
-@Import({TestDatabaseConfig.class, TubeGoogleLinkRepository.class, TubeSubscriptionRepository.class})
-class SubscriptionsSyncServiceTest {
+@Import({PostgresSliceTestConfig.class, TubeGoogleLinkRepository.class, TubeSubscriptionRepository.class})
+@ActiveProfiles("test")
+class SubscriptionsSyncServiceTest extends PostgresTestSupport {
 
     @Autowired TubeGoogleLinkRepository links;
     @Autowired TubeSubscriptionRepository subs;

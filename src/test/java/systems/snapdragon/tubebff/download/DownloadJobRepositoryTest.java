@@ -6,7 +6,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.r2dbc.test.autoconfigure.DataR2dbcTest;
 import org.springframework.context.annotation.Import;
 import reactor.core.publisher.Flux;
-import systems.snapdragon.tubebff.support.TestDatabaseConfig;
+import org.springframework.test.context.ActiveProfiles;
+import systems.snapdragon.commons.testsupport.PostgresTestSupport;
+import systems.snapdragon.tubebff.support.PostgresSliceTestConfig;
 
 import java.time.Duration;
 import java.util.List;
@@ -32,8 +34,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  */
 @DataR2dbcTest
-@Import({TestDatabaseConfig.class, DownloadJobRepository.class})
-class DownloadJobRepositoryTest {
+@Import({PostgresSliceTestConfig.class, DownloadJobRepository.class})
+@ActiveProfiles("test")
+class DownloadJobRepositoryTest extends PostgresTestSupport {
 
     @Autowired DownloadJobRepository repo;
 

@@ -5,7 +5,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
-import java.util.UUID;
 
 /**
  * Reactive (R2DBC) store for {@code tube_subscription} — a connected user's mirrored
@@ -46,9 +45,11 @@ public class TubeSubscriptionRepository {
 
     private Mono<Long> insert(String domain, String userSubject, String channelId,
                               String channelTitle, String thumbnailUrl) {
-        String id = UUID.randomUUID().toString();
-        TubeSubscription row = new TubeSubscription(id, domain, userSubject, channelId,
-                channelTitle, thumbnailUrl, Instant.now());
-        return repo.save(row).thenReturn(1L);
+        // The id is DB-generated ((gen_random_uuid())::text DEFAULT, changelog 008): the INSERT
+        // omits it; RETURNING id confirms the fresh row landed and we report rows-updated 1L
+        // (the same contract the former save().thenReturn(1L) returned).
+        return repo.insertReturningId(domain, userSubject, channelId, channelTitle, thumbnailUrl,
+                        Instant.now())
+                .thenReturn(1L);
     }
 }
