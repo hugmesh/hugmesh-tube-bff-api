@@ -26,8 +26,8 @@ import java.util.TreeMap;
  * <p>Validation shapes handled (the security-hardening "Bean Validation on all
  * paths" task):
  * <ul>
- *   <li>{@link WebExchangeBindException} — a {@code @Valid @RequestBody} DTO whose
- *       field constraints failed;</li>
+ *   <li>{@link WebExchangeBindException} — a {@code @Valid @RequestBody}
+ *       DTO whose field constraints failed;</li>
  *   <li>{@link ConstraintViolationException} — a {@code @Validated} controller's
  *       {@code @PathVariable}/{@code @RequestParam} constraint failed;</li>
  *   <li>{@link ServerWebInputException} — a malformed/missing body or an
@@ -47,7 +47,7 @@ public class ApiExceptionHandler {
      * @return a JSON response body {@code {"error": message}} with the carried status
      */
     @ExceptionHandler(ApiException.class)
-    public ResponseEntity<Map<String, Object>> handle(ApiException ex) {
+    public ResponseEntity<Map<String, Object>> handle(final ApiException ex) {
         return ResponseEntity.status(ex.status()).body(Map.of("error", ex.getMessage()));
     }
 

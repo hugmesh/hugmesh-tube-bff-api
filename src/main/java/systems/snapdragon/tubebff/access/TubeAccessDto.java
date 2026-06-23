@@ -33,7 +33,12 @@ public final class TubeAccessDto {
 
     /** The list-response wrapper. */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record AccessList(List<Access> access) {}
+    public record AccessList(List<Access> access) {
+        /** Defensive copy: prevents external mutation of the internal list. */
+        public AccessList {
+            access = List.copyOf(access);
+        }
+    }
 
     // ── request bodies ─────────────────────────────────────────────────
 
