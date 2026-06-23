@@ -18,10 +18,11 @@ import systems.snapdragon.tubebff.support.PostgresSliceTestConfig;
 import systems.snapdragon.commons.web.ApiException;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -170,9 +171,10 @@ class GoogleConnectServiceTest extends PostgresTestSupport {
                 .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(3600))
                 .subject(subject).claim("iss", issuer).issuer(issuer)
                 .claim("roles", List.of(roles)).build();
-        List<GrantedAuthority> auths = new ArrayList<>();
-        auths.add(new SimpleGrantedAuthority("ROLE_USER"));
-        for (String r : roles) auths.add(new SimpleGrantedAuthority("ROLE_" + r.toUpperCase()));
+        List<GrantedAuthority> auths = Stream.concat(
+                Stream.of(new SimpleGrantedAuthority("ROLE_USER")),
+                Stream.of(roles).map(r -> new SimpleGrantedAuthority("ROLE_" + r.toUpperCase())))
+                .collect(Collectors.toList());
         return new UsernamePasswordAuthenticationToken(jwt, "n/a", auths);
     }
 

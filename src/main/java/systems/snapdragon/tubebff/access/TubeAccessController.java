@@ -34,6 +34,22 @@ import java.util.Map;
  * </ul>
  * Every write is DOMAIN-SCOPED in the service; {@code state=revoked} rows are RETAINED
  * (audit), never hard-deleted.
+ *
+ * <h2>Caller-role access matrix</h2>
+ *
+ * <pre>
+ *  Path prefix                        │ Method         │ Min role
+ *  ───────────────────────────────────┼────────────────┼──────────────────
+ *  /bff/tube/admin/access/grant       │ POST           │ ADMIN | SUPERADMIN
+ *  /bff/tube/admin/access/timeout     │ POST           │ ADMIN | SUPERADMIN
+ *  /bff/tube/admin/access/ban         │ POST           │ ADMIN | SUPERADMIN
+ *  /bff/tube/admin/access/{type}/{sub}│ DELETE         │ ADMIN | SUPERADMIN
+ *  /bff/tube/superadmin/access        │ GET            │ SUPERADMIN
+ *  /bff/tube/superadmin/access/{sub}  │ GET (history)  │ SUPERADMIN
+ * </pre>
+ *
+ * @see TubeAccessGuard
+ * @see TubeAccessService
  */
 @Tag(name = "Tube Use Access", description = "Tube use grant/timeout/ban overlay "
         + "(tube_access): grant/timeout/ban/restore (TUBE_GOVERN), list-all/history "
@@ -60,10 +76,23 @@ public class TubeAccessController {
 
     // ── grant / timeout / ban / restore (TUBE_GOVERN) ──────────────────
 
+    // ---- Grant / timeout / ban / restore (TUBE_GOVERN) ----
+
+    /**
+     * Grant a user permanent may-use access ({@code tube_access} use override). This is
+     * the ONLY way to lift a user above the default-deny use floor — the bare
+     * {@code ROLE_TUBE} does not confer use by itself. Idempotent when an active grant
+     * already exists.
+     *
+     * @param body an object carrying {@code userSubject} (the target user's Casdoor sub)
+     *             and optional {@code reason}; the actor's brand is server-derived
+     * @param auth the acting admin's authentication
+     * @return 200 with the active {@link TubeAccessDto.Access} row (new or existing)
+     */
     @Operation(operationId = "grantUseAccess",
             summary = "GRANT a USER permanent may-use access (an active tube_access "
             + "use override) — the way to lift a user above the default-deny use floor. "
-            + "ADMIN/SUPERADMIN, own-brand.")
+            + "ADMIN/SUPERADMIN, own-brand. Idempotent if already active.")
     @PreAuthorize(TUBE_GOVERN)
     @PostMapping("/admin/access/grant")
     public Mono<ResponseEntity<TubeAccessDto.Access>> grant(
@@ -72,10 +101,21 @@ public class TubeAccessController {
                 .map(a -> ResponseEntity.ok(TubeAccessDto.Access.of(a)));
     }
 
+    /**
+     * Timeout a user from the tube service for a bounded window. Creates an active
+     * {@code banned} override with a future {@code expires_at}; the override stops
+     * denying automatically once {@code expires_at <= now} without any additional write.
+     * Idempotent when an active ban already exists.
+     *
+     * @param body carries {@code userSubject}, {@code ttlSeconds} (must be positive),
+     *             and optional {@code reason}
+     * @param auth the acting admin's authentication
+     * @return 200 with the active ban row (new or existing)
+     */
     @Operation(operationId = "timeoutUseAccess",
             summary = "TIMEOUT a USER from the tube service for a bounded window (an active "
-            + "banned override with a future expires_at; auto-restores on expiry). "
-            + "ADMIN/SUPERADMIN, own-brand.")
+            + "banned override with a future expires_at; auto-restores on expiry without "
+            + "a write). ADMIN/SUPERADMIN, own-brand. Idempotent if already active.")
     @PreAuthorize(TUBE_GOVERN)
     @PostMapping("/admin/access/timeout")
     public Mono<ResponseEntity<TubeAccessDto.Access>> timeout(
@@ -84,10 +124,19 @@ public class TubeAccessController {
                 .map(a -> ResponseEntity.ok(TubeAccessDto.Access.of(a)));
     }
 
+    /**
+     * Ban a user from the tube service permanently ({@code expires_at} NULL). A ban
+     * takes precedence over a co-existing grant (ban &gt; grant). Requires an explicit
+     * {@link #revoke} to lift.
+     *
+     * @param body carries {@code userSubject} and optional {@code reason}
+     * @param auth the acting admin's authentication
+     * @return 200 with the active ban row (new or existing)
+     */
     @Operation(operationId = "banUseAccess",
             summary = "BAN a USER from the tube service permanently (an active banned override, "
-            + "expires_at NULL). Denies even an active grantee (ban>grant). ADMIN/SUPERADMIN, "
-            + "own-brand.")
+            + "expires_at NULL). Denies even an active grantee (ban>grant). Must be revoked "
+            + "explicitly. ADMIN/SUPERADMIN, own-brand.")
     @PreAuthorize(TUBE_GOVERN)
     @PostMapping("/admin/access/ban")
     public Mono<ResponseEntity<TubeAccessDto.Access>> ban(
@@ -96,17 +145,32 @@ public class TubeAccessController {
                 .map(a -> ResponseEntity.ok(TubeAccessDto.Access.of(a)));
     }
 
+    /**
+     * Restore/revoke: CAS the active override of {@code accessType} to {@code revoked}
+     * for {@code userSubject} (the row is retained = audit trail). A no-op when no
+     * active override of that type exists. To restore use after a ban: revoke the
+     * {@code banned} row. To remove a grant: revoke the {@code use} row.
+     *
+     * @param accessType  must be {@code "use"} or {@code "banned"}; other values yield 400
+     * @param userSubject the Casdoor subject of the target user
+     * @param auth        the acting admin's authentication
+     * @return 200 with {@code {"state":"revoked","accessType":...,"userSubject":...}}
+     *         on success; 400 when {@code accessType} is invalid
+     */
     @Operation(operationId = "revokeUseAccess",
-            summary = "RESTORE/REVOKE: lift the active override of a type for a user "
-            + "(CAS active->revoked; the row is retained = audit). accessType = use|banned: "
-            + "revoke 'banned' to restore use; revoke 'use' to remove a grant. "
+            summary = "RESTORE/REVOKE: CAS active->revoked for one override type for a user "
+            + "(row retained = audit). accessType = use|banned: revoke 'banned' to restore use; "
+            + "revoke 'use' to remove a grant. No-op if no active override exists. "
             + "ADMIN/SUPERADMIN, own-brand.")
     @PreAuthorize(TUBE_GOVERN)
     @DeleteMapping("/admin/access/{accessType}/{userSubject}")
     public Mono<ResponseEntity<Map<String, Object>>> revoke(
             @PathVariable String accessType, @PathVariable String userSubject, Authentication auth) {
-        String type = TubeAccess.TYPE_USE.equals(accessType) ? TubeAccess.TYPE_USE
-                : TubeAccess.TYPE_BANNED.equals(accessType) ? TubeAccess.TYPE_BANNED : null;
+        String type = switch (accessType) {
+            case TubeAccess.TYPE_USE    -> TubeAccess.TYPE_USE;
+            case TubeAccess.TYPE_BANNED -> TubeAccess.TYPE_BANNED;
+            default                     -> null;
+        };
         if (type == null) {
             return Mono.just(ResponseEntity.badRequest().body(Map.of(
                     "error", "accessType must be 'use' or 'banned'")));
@@ -116,11 +180,18 @@ public class TubeAccessController {
                         "state", "revoked", "accessType", type, "userSubject", userSubject)));
     }
 
-    // ── manage-all (TUBE_MANAGE) ───────────────────────────────────────
+    // ---- Manage-all (TUBE_MANAGE) ----
 
+    /**
+     * List all active {@code tube_access} overrides. A scoped ADMIN sees only their
+     * brand's rows (domain server-derived); SUPERADMIN sees all brands.
+     *
+     * @param auth the acting superadmin's authentication
+     * @return a {@link TubeAccessDto.AccessList} wrapping all currently active rows
+     */
     @Operation(operationId = "listActiveUseAccess",
             summary = "List all ACTIVE tube_access overrides (scoped to the caller's "
-            + "brand; SUPERADMIN sees all). SUPERADMIN.")
+            + "brand; SUPERADMIN sees all brands). SUPERADMIN only.")
     @PreAuthorize(TUBE_MANAGE)
     @GetMapping("/superadmin/access")
     public Mono<TubeAccessDto.AccessList> listActive(Authentication auth) {
@@ -128,9 +199,19 @@ public class TubeAccessController {
                 .collectList().map(TubeAccessDto.AccessList::new);
     }
 
+    /**
+     * The full history (active + revoked = audit trail) of all tube_access overrides
+     * for a principal. Revoked rows are retained, never hard-deleted.
+     *
+     * @param userSubject the Casdoor subject of the user to audit
+     * @param auth        the acting superadmin's authentication
+     * @return a {@link TubeAccessDto.AccessList} of all rows (active and revoked),
+     *         newest first
+     */
     @Operation(operationId = "useAccessHistory",
-            summary = "The full grant/timeout/ban HISTORY (active + revoked = audit) for "
-            + "a principal (scoped to the caller's brand; SUPERADMIN sees all). SUPERADMIN.")
+            summary = "The full grant/timeout/ban HISTORY (active + revoked = audit trail) "
+            + "for a principal (scoped to the caller's brand; SUPERADMIN sees all). "
+            + "Revoked rows are retained (never deleted). SUPERADMIN only.")
     @PreAuthorize(TUBE_MANAGE)
     @GetMapping("/superadmin/access/{userSubject}/history")
     public Mono<TubeAccessDto.AccessList> history(@PathVariable String userSubject, Authentication auth) {
