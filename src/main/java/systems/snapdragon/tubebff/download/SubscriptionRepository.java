@@ -7,7 +7,6 @@ import systems.snapdragon.commons.security.DomainRegistry;
 import systems.snapdragon.commons.tenancy.DomainScope;
 
 import java.time.Instant;
-import java.util.UUID;
 
 /**
  * Reactive (R2DBC) store for {@code tube_subscription} — the per-user subscribed-channel
@@ -56,12 +55,15 @@ public class SubscriptionRepository {
 
     private Mono<TubeSubscription> insert(String userSubject, String channelId, String channelTitle,
                                           String latestVideoId, String latestVideoTitle, String dom) {
-        String id = UUID.randomUUID().toString();
         Instant now = Instant.now();
-        TubeSubscription row = new TubeSubscription(id, dom, userSubject, channelId,
-                nz(channelTitle), nz(latestVideoId), nz(latestVideoTitle), now, now);
-        return repo.save(row).thenReturn(new TubeSubscription(id, dom, userSubject, channelId,
-                channelTitle, latestVideoId, latestVideoTitle, now, now));
+        // The id is DB-generated ((gen_random_uuid())::text DEFAULT, changelog 008): the INSERT
+        // omits it and persists the nz()-coerced text (as the former save() did) and RETURNING id
+        // hands back the generated id, which we render into the returned row (the same row shape
+        // the former code returned — RAW caller values, not the nz()-coerced persisted ones).
+        return repo.insertReturningId(dom, userSubject, channelId, nz(channelTitle),
+                        nz(latestVideoId), nz(latestVideoTitle), now, now)
+                .map(id -> new TubeSubscription(id, dom, userSubject, channelId,
+                        channelTitle, latestVideoId, latestVideoTitle, now, now));
     }
 
     private Mono<TubeSubscription> findByChannel(String userSubject, String channelId, String domain) {

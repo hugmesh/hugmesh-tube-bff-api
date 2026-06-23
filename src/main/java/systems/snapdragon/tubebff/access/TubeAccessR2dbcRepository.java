@@ -7,6 +7,8 @@ import org.springframework.data.repository.query.Param;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Instant;
+
 /**
  * Spring Data R2DBC repository for {@code tube_access} (schema in Liquibase
  * {@code db/changelog/004-tube-access.xml}). MATCHES the snapdragon-federation-api
@@ -38,6 +40,31 @@ public interface TubeAccessR2dbcRepository extends R2dbcRepository<TubeAccess, S
     @Modifying
     @Query(REVOKE_CAS)
     Mono<Long> revokeIfActive(@Param("id") String id);
+
+    // ── DB-generated UUID PK insert (changelog 008): id is OMITTED so Postgres fills it
+    //    from the (gen_random_uuid())::text column DEFAULT; RETURNING id reads the generated
+    //    string back. A plain (non-@Modifying) @Query returning the new id — derivation
+    //    cannot express an INSERT ... RETURNING. The 9 supplied columns are exactly the
+    //    non-id values the former save(new TubeAccess(id, ...)) persisted (created_at is the
+    //    app-stamped Instant, as before), so the row is BYTE-IDENTICAL except the id source.
+    String INSERT_ACTIVE_RETURNING_ID = """
+            INSERT INTO tube_access \
+            (domain, user_subject, access_type, state, granted_by_subject, reason, \
+             created_at, expires_at, revoked_at) \
+            VALUES (:domain, :userSubject, :accessType, :state, :grantedBy, :reason, \
+             :createdAt, :expiresAt, :revokedAt) \
+            RETURNING id""";
+
+    @Query(INSERT_ACTIVE_RETURNING_ID)
+    Mono<String> insertReturningId(@Param("domain") String domain,
+                                   @Param("userSubject") String userSubject,
+                                   @Param("accessType") String accessType,
+                                   @Param("state") String state,
+                                   @Param("grantedBy") String grantedBy,
+                                   @Param("reason") String reason,
+                                   @Param("createdAt") Instant createdAt,
+                                   @Param("expiresAt") Instant expiresAt,
+                                   @Param("revokedAt") Instant revokedAt);
 
     // ── findActive: WHERE user_subject AND access_type AND state ['active'] [AND domain]
     //               ORDER BY created_at DESC, id  -> first ──────────────────────────

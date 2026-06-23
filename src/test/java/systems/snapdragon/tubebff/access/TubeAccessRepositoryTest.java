@@ -3,10 +3,12 @@ package systems.snapdragon.tubebff.access;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.data.r2dbc.DataR2dbcTest;
+import org.springframework.boot.data.r2dbc.test.autoconfigure.DataR2dbcTest;
 import org.springframework.context.annotation.Import;
 import reactor.core.publisher.Flux;
-import systems.snapdragon.tubebff.support.TestDatabaseConfig;
+import org.springframework.test.context.ActiveProfiles;
+import systems.snapdragon.commons.testsupport.PostgresTestSupport;
+import systems.snapdragon.tubebff.support.PostgresSliceTestConfig;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -36,8 +38,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Here we prove the audit-retain + CAS + domain-scope semantics on the H2 slice store.
  */
 @DataR2dbcTest
-@Import({TestDatabaseConfig.class, TubeAccessRepository.class})
-class TubeAccessRepositoryTest {
+@Import({PostgresSliceTestConfig.class, TubeAccessRepository.class})
+@ActiveProfiles("test")
+class TubeAccessRepositoryTest extends PostgresTestSupport {
 
     @Autowired TubeAccessRepository repo;
 

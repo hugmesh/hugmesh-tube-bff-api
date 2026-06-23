@@ -498,6 +498,7 @@
         "type" : "object",
         "properties" : {
           "jobId" : {
+            "minLength" : 1,
             "type" : "string"
           },
           "workerId" : {
@@ -506,6 +507,7 @@
             "type" : "string"
           },
           "result" : {
+            "minLength" : 1,
             "type" : "string"
           },
           "bytes" : {

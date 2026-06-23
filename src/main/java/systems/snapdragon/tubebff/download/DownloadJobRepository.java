@@ -7,7 +7,6 @@ import systems.snapdragon.commons.security.DomainRegistry;
 import systems.snapdragon.commons.tenancy.DomainScope;
 
 import java.time.Instant;
-import java.util.UUID;
 
 /**
  * Reactive (R2DBC) store for {@code tube_download_job} — the download WORK-QUEUE (schema
@@ -89,11 +88,13 @@ public class DownloadJobRepository {
      */
     private Mono<DownloadJob> insert(String userSubject, String channelId, String videoId,
                                      String title, String dom, String state) {
-        String id = UUID.randomUUID().toString();
         Instant now = Instant.now();
-        DownloadJob row = new DownloadJob(id, dom, userSubject, nz(channelId), videoId, nz(title),
-                state, null, null, 0, null, null, null, now, now);
-        return repo.save(row).thenReturn(row);
+        // The id is DB-generated ((gen_random_uuid())::text DEFAULT, changelog 008): the
+        // INSERT omits it and RETURNING id hands back the generated id, which we render into
+        // the returned row (every other field unchanged from the former app-minted insert).
+        return repo.insertReturningId(dom, userSubject, nz(channelId), videoId, nz(title), state, now, now)
+                .map(id -> new DownloadJob(id, dom, userSubject, nz(channelId), videoId, nz(title),
+                        state, null, null, 0, null, null, null, now, now));
     }
 
     // ---- Claim (FOR-UPDATE-SKIP-LOCKED-equivalent guarded CAS) ----

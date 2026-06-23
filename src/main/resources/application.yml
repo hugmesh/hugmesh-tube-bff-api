@@ -58,6 +58,10 @@ springdoc:
   api-docs:
     enabled: true
     path: /v3/api-docs
+    # Pin the dumped spec to OpenAPI 3.0.1. springdoc-openapi 3.x (pulled in by Boot 4)
+    # defaults to emitting OpenAPI 3.1.0, whose type arrays break ng-openapi-gen 0.51.0
+    # ("TypeError: type.startsWith is not a function"). Keep 3.0 for typed-client compat.
+    version: openapi_3_0
   swagger-ui:
     enabled: true
     path: /swagger-ui.html

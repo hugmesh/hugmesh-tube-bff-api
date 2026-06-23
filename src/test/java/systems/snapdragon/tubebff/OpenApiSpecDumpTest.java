@@ -5,15 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
+import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTestClient;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
-import systems.snapdragon.tubebff.support.TestDatabaseConfig;
+import systems.snapdragon.commons.testsupport.PostgresTestSupport;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -48,14 +47,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * write-and-pass so a developer just re-runs the test to refresh the spec.
  *
  * <p>Mirrors {@link TubeBffApplicationContextTest}: same {@code test} profile,
- * {@link TestDatabaseConfig} H2-PG schema, and a mocked {@link ReactiveJwtDecoder}
+ * the {@link PostgresTestSupport} Testcontainers Postgres schema, and a mocked {@link ReactiveJwtDecoder}
  * (no live Casdoor issuer is contacted).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureWebTestClient
 @ActiveProfiles("test")
-@Import(TestDatabaseConfig.class)
-class OpenApiSpecDumpTest {
+class OpenApiSpecDumpTest extends PostgresTestSupport {
 
     /** Committed spec path (repo-relative; the test runs with cwd = module root). */
     private static final Path SPEC_PATH = Path.of("src", "main", "resources", "openapi", "openapi.json");
@@ -90,6 +88,23 @@ class OpenApiSpecDumpTest {
         // Re-serialize with sorted keys + indentation so the on-disk form is stable
         // across runs/JVMs (springdoc's own key order is not guaranteed).
         JsonNode tree = STABLE_MAPPER.readTree(raw);
+
+        // DETERMINISM: springdoc-openapi (Boot 4 / OAS 3.1) now resolves the RUNTIME
+        // server URL into servers[0].url. Under WebEnvironment.RANDOM_PORT that is
+        // `http://localhost:<random>` — a value that changes every run and would make the
+        // committed spec non-reproducible (and produce a noisy port-only diff in CI).
+        // Normalize it back to the empty, brand-/host-agnostic placeholder the spec has
+        // always carried (the typed ng-openapi-gen client + docs pipeline supply their own
+        // base URL), so the dump stays byte-stable across runs and hosts.
+        JsonNode servers = tree.path("servers");
+        if (servers.isArray()) {
+            for (JsonNode server : servers) {
+                if (server.isObject() && server.has("url")) {
+                    ((com.fasterxml.jackson.databind.node.ObjectNode) server).put("url", "");
+                }
+            }
+        }
+
         String stable = STABLE_MAPPER.writeValueAsString(tree) + "\n";
 
         // Sanity: the document must describe the BFF surface, not an empty shell.

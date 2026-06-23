@@ -5,7 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.data.r2dbc.DataR2dbcTest;
+import org.springframework.boot.data.r2dbc.test.autoconfigure.DataR2dbcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -23,9 +23,11 @@ import systems.snapdragon.tubebff.download.SubscriptionRepository;
 import systems.snapdragon.tubebff.download.TubeDownloadController;
 import systems.snapdragon.tubebff.download.TubeDownloadDto;
 import systems.snapdragon.tubebff.download.TubeDownloadWorkerController;
+import org.springframework.test.context.ActiveProfiles;
 import systems.snapdragon.commons.security.DomainRegistry;
+import systems.snapdragon.commons.testsupport.PostgresTestSupport;
 import systems.snapdragon.tubebff.security.PrincipalDomain;
-import systems.snapdragon.tubebff.support.TestDatabaseConfig;
+import systems.snapdragon.tubebff.support.PostgresSliceTestConfig;
 import systems.snapdragon.tubebff.testsupport.TestIssuer;
 import systems.snapdragon.tubebff.web.ApiExceptionHandler;
 
@@ -72,9 +74,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </table>
  */
 @DataR2dbcTest
-@Import({TestDatabaseConfig.class,
+@ActiveProfiles("test")
+@Import({PostgresSliceTestConfig.class,
         DownloadJobRepository.class, SubscriptionRepository.class})
-class TubeRawApiDenyNegativeTest extends MultiIssuerControllerSliceSupport {
+// Extends PostgresTestSupport (the DB-generated-UUID-PK slices need real Postgres /
+// pgcrypto / INSERT ... RETURNING). MultiIssuerControllerSliceSupport's helpers are static
+// + package-private, so they are called qualified (this class is in the same `config`
+// package) rather than inherited — Java has single inheritance.
+class TubeRawApiDenyNegativeTest extends PostgresTestSupport {
 
     @Autowired DownloadJobRepository jobRepo;
     @Autowired StorageUsageR2dbcRepository usageRepo;
@@ -113,7 +120,8 @@ class TubeRawApiDenyNegativeTest extends MultiIssuerControllerSliceSupport {
         // REAL multi-issuer resolver for `registry`, and registers ApiExceptionHandler so a
         // controller-body ApiException renders its mapped status/body. The worker seam's
         // 403/401 is produced by the filter chain BEFORE the controller.
-        client = sliceClient(registry, new Object[]{new ApiExceptionHandler()},
+        client = MultiIssuerControllerSliceSupport.sliceClient(
+                registry, new Object[]{new ApiExceptionHandler()},
                 new TubeDownloadWorkerController(service),
                 new TubeDownloadController(service, useGateAllowAll()));
     }

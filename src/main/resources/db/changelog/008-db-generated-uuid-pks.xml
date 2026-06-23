@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+            http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.29.xsd">
+
+    <!--
+      DB-GENERATED UUID PRIMARY KEYS — the org-wide tube-bff migration (exemplars: merged
+      mod-bff #36, changelog 009-mod-action-db-generated-id.xml; merged admin-bff #133,
+      changelog 200-db-generated-uuid-pks.xml).
+
+      Decision (pinned): stop minting the UUID PRIMARY KEY in Java
+      (UUID.randomUUID().toString()); let Postgres generate it via a column DEFAULT and
+      read the generated id back on insert (INSERT ... RETURNING id). For a varchar id the
+      DB default casts the native uuid to text — (gen_random_uuid())::text — yielding the
+      lowercase 36-char hyphenated form, BYTE-IDENTICAL to UUID.randomUUID().toString().
+      The column type + the entity @Id type stay String; only the id SOURCE moves from the
+      app to the database. Each repository INSERT omits id and RETURNING id reads the
+      generated string back; entities that forced an INSERT via Persistable<String>.save()
+      switch to an explicit @Query INSERT ... RETURNING id.
+
+      columnDataType="varchar(64)" matches the ACTUAL column type these four tables declare
+      (changelog 004/005/006: id varchar(64)) — the addDefaultValue columnDataType is the
+      column-type metadata Liquibase needs to locate the column, so it must match the real
+      DDL; the 36-char generated value fits in varchar(64).
+
+      Numbered 008 — a band ABOVE the current max (007) in db.changelog-master.xml.
+      Registered LAST in the master with a SINGLE <include>.
+
+      ── tables migrated ─────────────────────────────────────────────────────────────
+        tube_access        (004) — was TubeAccessRepository.insertActive()
+        tube_download_job  (005) — was DownloadJobRepository.insert()
+        tube_google_link   (005) — was TubeGoogleLinkRepository.insert()
+        tube_subscription  (006) — minted in BOTH SubscriptionRepository.insert() AND
+                                   TubeSubscriptionRepository.insert(); ONE addDefaultValue
+                                   for the single shared table covers both mint sites.
+      The portable find-then-write dedup / idempotency idioms (enqueue, upsert) and the
+      guarded CAS transitions are UNCHANGED — only the fresh-INSERT branch now omits id and
+      reads the DB-generated id back via RETURNING id.
+    -->
+
+    <!-- FIRST: ensure gen_random_uuid() is available. Built-in on PG13+, but install
+         pgcrypto defensively (idempotent + harmless if already present) — mirrors the
+         mod-bff / admin-bff exemplars. Gated to PostgreSQL: the test store IS Postgres
+         (commons PostgresTestSupport), and the production runtime is Postgres. -->
+    <changeSet id="008-pgcrypto-extension" author="snapdragon">
+        <preConditions onFail="MARK_RAN" onError="MARK_RAN">
+            <dbms type="postgresql"/>
+        </preConditions>
+        <comment>Install pgcrypto so gen_random_uuid() is available as the
+                 DB-generated-UUID column DEFAULT. IF NOT EXISTS — idempotent.</comment>
+        <sql>CREATE EXTENSION IF NOT EXISTS pgcrypto;</sql>
+    </changeSet>
+
+    <!-- tube_access.id (varchar(64), changelog 004): DB-generate via (gen_random_uuid())::text
+         instead of TubeAccessRepository minting UUID.randomUUID().toString(). INSERT omits id,
+         RETURNING id reads it back. -->
+    <changeSet id="008-gen-uuid-tube_access" author="snapdragon">
+        <comment>DB-generate tube_access.id ((gen_random_uuid())::text) instead of the app
+                 minting it; INSERT omits id, RETURNING id reads it back.</comment>
+        <addDefaultValue tableName="tube_access" columnName="id"
+                         columnDataType="varchar(64)"
+                         defaultValueComputed="(gen_random_uuid())::text"/>
+    </changeSet>
+
+    <!-- tube_download_job.id (varchar(64), changelog 005): DB-generate via
+         (gen_random_uuid())::text instead of DownloadJobRepository minting it. The
+         find-then-write dedup (enqueue) is unchanged; only the fresh-INSERT branch omits id. -->
+    <changeSet id="008-gen-uuid-tube_download_job" author="snapdragon">
+        <comment>DB-generate tube_download_job.id ((gen_random_uuid())::text) instead of the
+                 app minting it; INSERT omits id, RETURNING id reads it back.</comment>
+        <addDefaultValue tableName="tube_download_job" columnName="id"
+                         columnDataType="varchar(64)"
+                         defaultValueComputed="(gen_random_uuid())::text"/>
+    </changeSet>
+
+    <!-- tube_google_link.id (varchar(64), changelog 005): DB-generate via
+         (gen_random_uuid())::text instead of TubeGoogleLinkRepository minting it. INSERT omits
+         id, RETURNING id reads it back; the soft-revoke audit semantics are unchanged. -->
+    <changeSet id="008-gen-uuid-tube_google_link" author="snapdragon">
+        <comment>DB-generate tube_google_link.id ((gen_random_uuid())::text) instead of the
+                 app minting it; INSERT omits id, RETURNING id reads it back.</comment>
+        <addDefaultValue tableName="tube_google_link" columnName="id"
+                         columnDataType="varchar(64)"
+                         defaultValueComputed="(gen_random_uuid())::text"/>
+    </changeSet>
+
+    <!-- tube_subscription.id (varchar(64), changelog 006): DB-generate via
+         (gen_random_uuid())::text. ONE addDefaultValue covers BOTH mint sites against this
+         single shared table (SubscriptionRepository.insert + TubeSubscriptionRepository.insert);
+         the find-then-write / update-then-insert upsert idioms are unchanged, only each
+         fresh-INSERT branch omits id and reads the DB-generated id back via RETURNING id. -->
+    <changeSet id="008-gen-uuid-tube_subscription" author="snapdragon">
+        <comment>DB-generate tube_subscription.id ((gen_random_uuid())::text) instead of the
+                 app minting it; INSERT omits id, RETURNING id reads it back (both mint sites).</comment>
+        <addDefaultValue tableName="tube_subscription" columnName="id"
+                         columnDataType="varchar(64)"
+                         defaultValueComputed="(gen_random_uuid())::text"/>
+    </changeSet>
+
+</databaseChangeLog>
