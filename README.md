@@ -4,8 +4,8 @@ Tube BFF — the access-governance + control plane for the **LocalTube** video O
 SERVICE (self-hosted personal YouTube archival: a user connects Google, their subscribed
 channels sync to a DB, and yt-dlp downloads new videos on a schedule for owner-private
 in-platform viewing). Twin of `snapdragon-owncast-bff-api` / `snapdragon-wiki-bff-api`
-(Java 21 WebFlux + R2DBC Postgres + Liquibase + Casdoor JWT resource server, package
-`systems.snapdragon.tubebff`, artifact `tube-bff` 0.1.0, Spring Boot 4.0.2).
+(Java 25 WebFlux + R2DBC Postgres + Liquibase + Casdoor JWT resource server, package
+`systems.snapdragon.tubebff`, artifact `tube-bff` 0.1.0, Spring Boot 4.0.7).
 
 > **State convention:** ✅ shipped (on `main`) · 🚧 in-flight (open branch/PR) ·
 > 🔭 planned (design only, no code in this repo). See the
@@ -13,10 +13,10 @@ in-platform viewing). Twin of `snapdragon-owncast-bff-api` / `snapdragon-wiki-bf
 
 ## Current State
 
-As of 2026-06-20 this BFF sits on the unified Snapdragon ecosystem baseline:
+As of 2026-06-24 this BFF sits on the unified Snapdragon ecosystem baseline:
 
-- **Spring Boot 4.0.2 / Spring Cloud 2025.1, Java 21, WebFlux reactive.** The build is a
-  child of the org metapom **`snapdragon-parent` 2.4.0** (which itself rides Boot 4), so
+- **Spring Boot 4.0.7 / Spring Cloud 2025.1.2, Java 25 LTS, WebFlux reactive.** The build is
+  a child of the org metapom **`snapdragon-parent` 2.7.0** (which itself rides Boot 4), so
   the reactive-BFF dependency + plugin baseline is inherited, not duplicated here.
 - **Shared security/tenancy via `snapdragon-commons` 2.0.0** (`systems.snapdragon.commons.*`).
   This BFF's former local copies of `security.{Roles,CasdoorAuthorities,DomainRegistry,DomainScope}`,
