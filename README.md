@@ -16,7 +16,7 @@ in-platform viewing). Twin of `snapdragon-owncast-bff-api` / `snapdragon-wiki-bf
 As of 2026-06-20 this BFF sits on the unified Snapdragon ecosystem baseline:
 
 - **Spring Boot 4.0.2 / Spring Cloud 2025.1, Java 21, WebFlux reactive.** The build is a
-  child of the org metapom **`snapdragon-parent` 2.0.0** (which itself rides Boot 4), so
+  child of the org metapom **`snapdragon-parent` 2.4.0** (which itself rides Boot 4), so
   the reactive-BFF dependency + plugin baseline is inherited, not duplicated here.
 - **Shared security/tenancy via `snapdragon-commons` 2.0.0** (`systems.snapdragon.commons.*`).
   This BFF's former local copies of `security.{Roles,CasdoorAuthorities,DomainRegistry,DomainScope}`,
@@ -111,7 +111,7 @@ flowchart LR
 |------|--------|---------|-------|
 | `tube_access` overlay + `TubeAccessGuard` (default-deny) | ✅ shipped (PR2) | `access` | grant/timeout/ban/restore; ban > grant; SUPERADMIN ban-exempt |
 | Google OAuth connect + subscriptions sync | ✅ shipped (PR3) | `google` | `youtube.readonly`; refresh token AES-256-GCM at rest via `TokenCipher` |
-| Signed short-TTL HMAC media URLs + owner two-wall | ✅ shipped (PR5) | `media` | signs `/tube/content/...` URLs; `/bff/tube/media/verify` reserved for the sidecar `auth_request` |
+| Signed short-TTL HMAC media URLs + owner two-wall | ✅ shipped (PR5) | `media` | signs `/tube/content/...` URLs; the public `/bff/tube/media/verify` `auth_request` endpoint for the sidecar is now ✅ shipped (PR #25) |
 | Download work-queue + storage budgets | ✅ shipped (PR4) | `download` | claim/report state machine; per-user budget cap |
 | GitLab CI: test → build:image → pentest | ✅ shipped | — | SCA + ZAP DAST baseline (incl. nuclei) via the shared harness; `make pentest` mirrors it |
 
@@ -135,6 +135,10 @@ All routes are mounted under `/bff/tube` (reached only through the `fe-gateway`;
 - `GET /bff/tube/media/sign` — authenticated; owner two-wall (path `sub` must equal the
   caller's JWT subject and brand) → returns a signed `/tube/content/<domain>/<subject>/...`
   URL + `expiresAt`
+- `GET /bff/tube/media/verify` — **PUBLIC** (`permitAll`), the tube-media nginx sidecar's
+  `auth_request` target; carries NO JWT (the HMAC signature minted by `/sign` is the sole
+  credential). Fail-closed + non-leaking: `200` only for a valid, unexpired signature over
+  the exact `(sub, domain, path, exp)` tuple, `403` (empty body) for every other case
 
 **Downloads + budgets** — `download/TubeDownloadController`, `download/TubeDownloadWorkerController`, `download/TubeStorageBudgetController`
 - `GET /bff/tube/downloads` · `POST /bff/tube/downloads` — authenticated (owner-scoped enqueue/list)
@@ -198,6 +202,11 @@ store, which tube has no analogue of — use is grant-only). Mirrors the comment
 - **007 `tube-subscription-download-fields`** — adds `latest_video_id`,
   `latest_video_title`, `created_at`, `updated_at` so the work-queue can use
   `tube_subscription` as its enqueue source (PR4).
+- **008 `db-generated-uuid-pks`** — moves the `varchar(64)` UUID primary keys of
+  `tube_access` / `tube_download_job` / `tube_google_link` / `tube_subscription` from
+  app-minted (`UUID.randomUUID().toString()`) to DB-generated column DEFAULTs
+  (`(gen_random_uuid())::text`, with `pgcrypto` installed defensively); inserts omit `id`
+  and read it back via `RETURNING id` (adopts the mod-bff #36 / admin-bff #133 pattern, PR #23).
 
 ## CI
 
@@ -245,8 +254,8 @@ plug into, but the components themselves live elsewhere:
   deferred follow-up.
 - 🔭 **tube-media Nginx serving sidecar + `be-gateway /tube/content/**` route** that
   verifies the HMAC-signed URLs this BFF issues (via a `auth_request` to
-  `/bff/tube/media/verify`). The signing is ✅ shipped here; the byte-serving sidecar is
-  an external component.
+  `/bff/tube/media/verify`). The signing AND the public `/verify` `auth_request` endpoint
+  are ✅ shipped here; the byte-serving sidecar that calls `/verify` is an external component.
 - 🔭 **`snapdragon-tube-ui` native-federation remote** (DB-hosted federated Angular
   module) consuming these BFF endpoints.
 - 🔭 **Generator devops for the tube optional service** — the deployment story:
