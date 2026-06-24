@@ -157,19 +157,17 @@ public class GoogleConnectService {
 
     private Mono<Void> revokeAtGoogle(TubeGoogleLink link) {
         // Decrypt the refresh token in memory ONLY to revoke it at Google; never returned.
-        String refresh;
-        try {
-            refresh = cipher.decrypt(link.refreshTokenCiphertext());
-        } catch (RuntimeException e) {
-            // A corrupt/undecryptable blob shouldn't block the soft-revoke.
-            log.warn("[tube-google] could not decrypt refresh token to revoke (id={}): {}",
-                    link.id(), e.getMessage());
-            return Mono.empty();
-        }
-        return google.revoke(refresh).onErrorResume(e -> {
-            log.warn("[tube-google] google.revoke failed (best-effort) id={}: {}",
-                    link.id(), e.getMessage());
-            return Mono.empty();
-        });
+        // fromCallable surfaces any RuntimeException as an onError signal so onErrorResume
+        // can handle a corrupt/undecryptable blob without blocking the soft-revoke.
+        return Mono.fromCallable(() -> cipher.decrypt(link.refreshTokenCiphertext()))
+                .doOnError(e -> log.warn(
+                        "[tube-google] could not decrypt refresh token to revoke (id={}): {}",
+                        link.id(), e.getMessage()))
+                .onErrorResume(RuntimeException.class, e -> Mono.empty())
+                .flatMap(refresh -> google.revoke(refresh)
+                        .doOnError(e -> log.warn(
+                                "[tube-google] google.revoke failed (best-effort) id={}: {}",
+                                link.id(), e.getMessage()))
+                        .onErrorResume(e -> Mono.empty()));
     }
 }

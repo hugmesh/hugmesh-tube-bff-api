@@ -74,21 +74,20 @@ public class SubscriptionsSyncService {
             return Mono.error(ApiException.forbidden(
                     "Google connection needs re-authentication; reconnect first"));
         }
-        String refresh;
-        try {
-            refresh = cipher.decrypt(link.refreshTokenCiphertext());
-        } catch (RuntimeException e) {
-            // An undecryptable blob can never be refreshed — treat as needing reconnect.
-            return links.markReauthRequired(o.domain(), o.subject())
-                    .then(Mono.error(ApiException.forbidden(
-                            "stored Google token is unreadable; reconnect required")));
-        }
-        return google.refreshAccessToken(refresh)
-                // Refresh FAILED (revoked/expired): mark reauth_required + STOP (no retry).
-                .onErrorResume(e -> links.markReauthRequired(o.domain(), o.subject())
-                        .then(Mono.error(ApiException.forbidden(
-                                "Google refresh failed; re-authentication required"))))
-                .flatMap(accessToken -> pageAndUpsert(o, accessToken));
+        // fromCallable surfaces any RuntimeException from cipher.decrypt as an onError
+        // signal; onErrorResume marks the link as needing re-authentication and propagates
+        // a 403 — an undecryptable blob can never be refreshed.
+        return Mono.fromCallable(() -> cipher.decrypt(link.refreshTokenCiphertext()))
+                .onErrorResume(RuntimeException.class, e ->
+                        links.markReauthRequired(o.domain(), o.subject())
+                                .then(Mono.error(ApiException.forbidden(
+                                        "stored Google token is unreadable; reconnect required"))))
+                .flatMap(refresh -> google.refreshAccessToken(refresh)
+                        // Refresh FAILED (revoked/expired): mark reauth_required + STOP (no retry).
+                        .onErrorResume(e -> links.markReauthRequired(o.domain(), o.subject())
+                                .then(Mono.error(ApiException.forbidden(
+                                        "Google refresh failed; re-authentication required"))))
+                        .flatMap(accessToken -> pageAndUpsert(o, accessToken)));
     }
 
     /** Walk all subscription pages (bounded) and UPSERT each channel; return the count. */
