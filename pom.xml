@@ -3,12 +3,12 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-  <!-- The org metapom — consolidates the Spring Boot 3.5.5 / Java 21 reactive BFF
+  <!-- The org metapom — consolidates the Spring Boot 4.0.7 / Java 25 reactive BFF
        baseline (WebFlux + Casdoor OAuth2 resource server + R2DBC/Liquibase +
        SpringDoc), the shared <dependencies>, dependencyManagement (snapdragon-commons),
        pluginManagement (compiler / surefire bytebuddy flag / spring-boot / native) and
        the GitLab Maven publishing wiring. snapdragon-parent is itself a child of
-       spring-boot-starter-parent:3.5.5, so the Spring Boot dependency + plugin
+       spring-boot-starter-parent 4.0.7, so the Spring Boot dependency + plugin
        management is inherited TRANSITIVELY. -->
   <parent>
     <groupId>systems.snapdragon</groupId>
@@ -22,7 +22,7 @@
   <artifactId>tube-bff</artifactId>
   <version>0.1.0</version>
   <properties>
-    <!-- java.version (21), encoding and the snapdragon-commons version are all
+    <!-- java.version (25), encoding and the snapdragon-commons version are all
          inherited from snapdragon-parent. This BFF has NO repo-specific deps beyond
          the shared reactive-BFF baseline, so no extra version pins here. -->
   </properties>
@@ -44,7 +44,6 @@
     <dependency>
       <groupId>systems.snapdragon</groupId>
       <artifactId>snapdragon-commons</artifactId>
-      <version>2.0.0</version>
       <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>

@@ -18,7 +18,7 @@ As of 2026-06-24 this BFF sits on the unified Snapdragon ecosystem baseline:
 - **Spring Boot 4.0.7 / Spring Cloud 2025.1.2, Java 25 LTS, WebFlux reactive.** The build is
   a child of the org metapom **`snapdragon-parent` 2.7.0** (which itself rides Boot 4), so
   the reactive-BFF dependency + plugin baseline is inherited, not duplicated here.
-- **Shared security/tenancy via `snapdragon-commons` 2.0.0** (`systems.snapdragon.commons.*`).
+- **Shared security/tenancy via `snapdragon-commons` 2.7.0** (`systems.snapdragon.commons.*`).
   This BFF's former local copies of `security.{Roles,CasdoorAuthorities,DomainRegistry,DomainScope}`,
   `config.TenancyResourceServerConfig` and `web.ApiException` were deleted and now come
   from commons (version managed by the parent). This BFF does **not** depend on
