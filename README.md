@@ -40,10 +40,11 @@ As of 2026-06-24 this BFF sits on the unified Snapdragon ecosystem baseline:
 - **CI is GitLab** (`.gitlab-ci.yml`); there are **no** GitHub Actions. The GitHub repo is
   pull-mirrored into in-cluster GitLab.
 
-Functionally, everything in [Capabilities](#capabilities-what-is-on-main) (PR2–PR5 + the
-default-deny `/sign` gate + the GitLab pentest stage) is ✅ shipped on `main`; the byte
-plane (tube-media sidecar), the yt-dlp runner, the tube-ui remote and the wider PR8 admin
-surface remain 🔭 external / planned (see below).
+Functionally, everything in [Capabilities](#capabilities-what-is-on-main) (the access
+overlay, Google OAuth connect, download queue, signed media URLs + the GitLab pentest stage)
+is ✅ shipped on `main`; the byte plane (tube-media sidecar), the yt-dlp runner, the
+tube-ui remote and the wider admin quota/retention surface remain 🔭 external / planned
+(see below).
 
 ## What this BFF owns
 
@@ -109,10 +110,10 @@ flowchart LR
 
 | Area | Status | Package | Notes |
 |------|--------|---------|-------|
-| `tube_access` overlay + `TubeAccessGuard` (default-deny) | ✅ shipped (PR2) | `access` | grant/timeout/ban/restore; ban > grant; SUPERADMIN ban-exempt |
-| Google OAuth connect + subscriptions sync | ✅ shipped (PR3) | `google` | `youtube.readonly`; refresh token AES-256-GCM at rest via `TokenCipher` |
-| Signed short-TTL HMAC media URLs + owner two-wall | ✅ shipped (PR5) | `media` | signs `/tube/content/...` URLs; the public `/bff/tube/media/verify` `auth_request` endpoint for the sidecar is now ✅ shipped (PR #25) |
-| Download work-queue + storage budgets | ✅ shipped (PR4) | `download` | claim/report state machine; per-user budget cap |
+| `tube_access` overlay + `TubeAccessGuard` (default-deny) | ✅ shipped | `access` | grant/timeout/ban/restore; ban > grant; SUPERADMIN ban-exempt |
+| Google OAuth connect + subscriptions sync | ✅ shipped | `google` | `youtube.readonly`; refresh token AES-256-GCM at rest via `TokenCipher` |
+| Signed short-TTL HMAC media URLs + owner two-wall | ✅ shipped | `media` | signs `/tube/content/...` URLs; the public `/bff/tube/media/verify` `auth_request` endpoint for the sidecar is ✅ shipped |
+| Download work-queue + storage budgets | ✅ shipped | `download` | claim/report state machine; per-user budget cap |
 | GitLab CI: test → build:image → pentest | ✅ shipped | — | SCA + ZAP DAST baseline (incl. nuclei) via the shared harness; `make pentest` mirrors it |
 
 ## API surface (route groups)
@@ -147,7 +148,7 @@ All routes are mounted under `/bff/tube` (reached only through the `fe-gateway`;
   human role hierarchy — no USER/MOD/ADMIN/SUPERADMIN reaches it)
 - `POST /bff/tube/admin/storage-budget` — set a user's storage budget cap (ADMIN | SUPERADMIN, own-brand)
 
-## The `tube_access` overlay + `TubeAccessGuard` (✅ PR2)
+## The `tube_access` overlay + `TubeAccessGuard`
 
 The use grant/timeout/ban overlay was cloned EXACTLY from the owncast-bff `owncast_grant`
 (004) overlay (which itself cloned the wiki-bff `wiki_access`), swapping `broadcast` → `use`:
@@ -172,7 +173,7 @@ The use grant/timeout/ban overlay was cloned EXACTLY from the owncast-bff `ownca
   cross-domain; exempt from ban.
 - **ADMIN (own brand)** — `TUBE_GOVERN`: grant/timeout/ban/restore may-use + set storage
   budgets (✅). The wider quota / retention / allow-deny-users / cadence admin surface is
-  🔭 the PR8 roadmap — only the storage-budget `POST` is shipped today.
+  🔭 planned (see [Roadmap](#roadmap--not-yet-in-this-repo)) — only the storage-budget `POST` is shipped today.
 - **MOD** — 🔭 moderation lives in mod-bff (`tube.*` ModActionType, later PR) via the
   derived `ROLE_TUBE_MOD` (MOD ∩ TUBE); not in this repo.
 - **USER** — `ROLE_TUBE` + a `use` grant (default-deny): connect Google + sync
@@ -189,19 +190,19 @@ access goes through R2DBC. Numbering starts at 004 to match the `owncast_grant` 
 store, which tube has no analogue of — use is grant-only). Mirrors the comment block in
 `db.changelog-master.xml`:
 
-- **004 `tube-access`** — the use grant/timeout/ban overlay (PR2).
+- **004 `tube-access`** — the use grant/timeout/ban overlay.
 - **005a `tube-google-link`** — `tube_google_link`: per-(brand,user) Google OAuth
   `youtube.readonly` connection; refresh token stored only as AES-256-GCM ciphertext
   (`refresh_token_ciphertext = base64(iv||ct||tag)`), partial-UNIQUE on the live row,
-  soft-revoke=audit (PR3).
+  soft-revoke=audit.
 - **005b `tube-download-queue`** — `tube_download_job` (the queued→claimed→downloading→
   done/failed/skipped work-queue + dedup + claim/report) + `tube_storage_usage`
-  (per-user budget accounting) (PR4).
+  (per-user budget accounting).
 - **006 `tube-subscription`** — `tube_subscription`: per-(brand,user) mirror of subscribed
-  YouTube channels, `UNIQUE(domain, user_subject, channel_id)` (PR3).
+  YouTube channels, `UNIQUE(domain, user_subject, channel_id)`.
 - **007 `tube-subscription-download-fields`** — adds `latest_video_id`,
   `latest_video_title`, `created_at`, `updated_at` so the work-queue can use
-  `tube_subscription` as its enqueue source (PR4).
+  `tube_subscription` as its enqueue source.
 - **008 `db-generated-uuid-pks`** — moves the `varchar(64)` UUID primary keys of
   `tube_access` / `tube_download_job` / `tube_google_link` / `tube_subscription` from
   app-minted (`UUID.randomUUID().toString()`) to DB-generated column DEFAULTs
@@ -263,7 +264,7 @@ plug into, but the components themselves live elsewhere:
   superadmin `TUBE_MANAGE` + a GPU-node check.
 - 🔭 **mod-bff tube moderation surface** — `tube.*` ModActionType + the derived
   `ROLE_TUBE_MOD` (MOD ∩ TUBE); lands in mod-bff, not here.
-- 🔭 **PR8 wider admin surface** — quota / retention / allow-deny-users / cadence
+- 🔭 **Wider admin surface** — quota / retention / allow-deny-users / cadence
   governance. Only the storage-budget `POST` is shipped today.
 - 🚧 **Notifications EXTERNAL channels** (platform-wide, in-flight) — Matrix DM / Akkoma
   feed / phpBB / email adapters on top of the in-app notifications MVP; the tube service
