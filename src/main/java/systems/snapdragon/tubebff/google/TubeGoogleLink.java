@@ -9,13 +9,24 @@ import org.springframework.data.relational.core.mapping.Table;
 import java.time.Instant;
 
 /**
- * A single {@code tube_google_link} row — the per-(brand,user) Google OAuth connection
- * (schema in Liquibase {@code db/changelog/005-tube-google-link.xml}).
+ * A single {@code tube_google_link} row — the per-(brand, user) Google OAuth connection
+ * record for the YouTube subscriptions sync.
  *
- * <p>The refresh token lives ONLY as {@code refreshTokenCiphertext} (AES-256-GCM
- * {@code base64(iv||ct||tag)} from {@link TokenCipher}); this record NEVER carries the
- * cleartext token, and neither does any DTO crossing the HTTP boundary. {@code domain} +
- * {@code userSubject} are stamped server-side (a personal connect is single-domain).
+ * <p>Schema: Liquibase {@code db/changelog/005-tube-google-link.xml}. The refresh token
+ * lives ONLY as {@code refreshTokenCiphertext} (AES-256-GCM {@code base64(iv||ct||tag)}
+ * from {@link TokenCipher}); this record NEVER carries the cleartext token, and neither
+ * does any DTO crossing the HTTP boundary. {@code domain} and {@code userSubject} are
+ * stamped server-side (a personal connect is always single-domain — no SUPERADMIN bypass).
+ *
+ * <p>The connection is never hard-deleted: a disconnect soft-revokes by stamping
+ * {@code revoked_at}. The LIVE connection is the row where {@code revoked_at IS NULL}.
+ *
+ * <p>Implements {@link Persistable}&lt;String&gt; with {@code isNew = true} because the PK
+ * is an app-generated UUID; {@code save()} is therefore always an INSERT.
+ *
+ * @see TubeGoogleLinkRepository
+ * @see TubeGoogleLinkR2dbcRepository
+ * @see TokenCipher
  */
 @Table("tube_google_link")
 public record TubeGoogleLink(
@@ -44,7 +55,12 @@ public record TubeGoogleLink(
         return true;
     }
 
-    /** The LIVE connection has not been soft-revoked. */
+    /**
+     * Returns {@code true} when this connection is live — i.e. it has not been
+     * soft-revoked ({@code revoked_at IS NULL}).
+     *
+     * @return {@code true} iff {@code revokedAt == null}
+     */
     public boolean isLive() {
         return revokedAt == null;
     }

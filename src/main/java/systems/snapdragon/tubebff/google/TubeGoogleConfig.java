@@ -22,9 +22,14 @@ import org.springframework.web.reactive.function.client.WebClient;
 @EnableConfigurationProperties(TubeGoogleProperties.class)
 public class TubeGoogleConfig {
 
-    /** A plain reactive {@link WebClient} for Google's OAuth token endpoint + the
-     *  YouTube Data API. No base URL — the impl uses absolute URIs so the endpoints are
-     *  explicit + auditable. */
+    /**
+     * A plain reactive {@link WebClient} for Google's OAuth token endpoint and the YouTube
+     * Data API. No base URL is set — {@link DefaultGoogleApiClient} uses absolute URIs so
+     * every endpoint is explicit and auditable.
+     *
+     * @param builder the Spring-managed builder (with common codec/exchange config)
+     * @return a configured {@code WebClient} instance
+     */
     @Bean
     WebClient tubeGoogleWebClient(WebClient.Builder builder) {
         return builder.build();

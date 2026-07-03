@@ -49,16 +49,35 @@ public class SubscriptionsSyncService {
         this.owner = owner;
     }
 
-    /** The owner's currently-stored subscriptions (owner+domain scoped). No network. */
+    /**
+     * Return the owner's currently stored subscribed channels from the local DB — no
+     * Google network call. Owner + domain scoped (single-domain, fail-closed).
+     *
+     * @param auth the authenticated principal
+     * @return a {@code Flux} of {@link TubeSubscription} rows ordered by channel title;
+     *         errors (403) when the owner cannot be resolved
+     */
     public Flux<TubeSubscription> list(Authentication auth) {
         return Mono.fromCallable(() -> owner.resolve(auth))
                 .flatMapMany(o -> subs.listForOwner(o.domain(), o.subject()));
     }
 
     /**
-     * Sync the owner's subscriptions from Google. Returns the count of channels UPSERTed.
-     * Errors with 409 when there is no live link, or 4xx (and marks reauth_required) when
-     * the refresh fails.
+     * Sync the owner's YouTube subscriptions from Google and idempotently UPSERT each
+     * channel into {@code tube_subscription}. Pages all pages (up to {@value #MAX_PAGES}
+     * = 5000 channels). Returns the total UPSERTed count.
+     *
+     * <p>Errors without retry:
+     * <ul>
+     *   <li>409 — no live Google link (user must connect first);</li>
+     *   <li>403 — the link is already flagged {@code reauth_required} (reconnect needed);</li>
+     *   <li>403 — the refresh exchange failed (revoked/expired); marks {@code
+     *       reauth_required} before surfacing the error.</li>
+     * </ul>
+     *
+     * @param auth the authenticated principal
+     * @return a {@code Mono} emitting the count of channels UPSERTed; errors on the
+     *         conditions above or when the owner cannot be resolved
      */
     public Mono<Integer> sync(Authentication auth) {
         return Mono.fromCallable(() -> owner.resolve(auth))

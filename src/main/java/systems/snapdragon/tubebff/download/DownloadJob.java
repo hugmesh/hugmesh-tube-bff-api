@@ -10,31 +10,43 @@ import java.time.Instant;
 
 /**
  * A single {@code tube_download_job} row — one (domain, user_subject, video) the system
- * wants DOWNLOADED (schema in Liquibase {@code db/changelog/005-tube-download-queue.xml}).
- * The BFF owns the WORK-QUEUE; the future yt-dlp runner CronJob polls the internal
- * claim/report endpoints to do the actual download.
+ * wants downloaded by the yt-dlp CronJob worker.
  *
- * <p>The job moves through a small state machine the repository CASes between:
+ * <p>Schema: Liquibase {@code db/changelog/005-tube-download-queue.xml}. The BFF owns the
+ * WORK-QUEUE; the future yt-dlp runner CronJob polls the internal claim/report endpoints
+ * ({@link TubeDownloadWorkerController}) to do the actual download.
+ *
+ * <h2>State machine</h2>
+ *
  * <pre>
- *   queued -&gt; claimed -&gt; downloading -&gt; done
- *                                      -&gt; failed
- *   queued -&gt; skipped   (storage budget full at enqueue/claim — pause-on-full)
+ *   queued ──► claimed ──► downloading ──► done
+ *                                      └──► failed
+ *   queued ──► skipped   (storage budget full at enqueue/claim — pause-on-full)
  * </pre>
  *
+ * <p>Each transition is a guarded CAS in {@link DownloadJobR2dbcRepository}. A lost race
+ * (rows-updated = 0) means another worker already won that transition.
+ *
+ * <h2>Key columns</h2>
+ *
  * <ul>
- *   <li>{@code domain} — the brand the job belongs to, stamped SERVER-SIDE from the
- *       acting principal's validated-issuer brand (NEVER a request field). A scoped
- *       user/admin only ever touches their own brand's jobs; SUPERADMIN cross-domain.</li>
- *   <li>{@code userSubject} — the Casdoor subject who OWNS the job (the subscriber whose
+ *   <li>{@code domain} — brand, stamped SERVER-SIDE from the validated JWT issuer
+ *       (never a request field). A scoped user sees only their brand's jobs; SUPERADMIN
+ *       is cross-domain.</li>
+ *   <li>{@code userSubject} — the Casdoor subject who owns the job (the subscriber whose
  *       feed it came from); the owner-scope key for the user list/enqueue surface.</li>
- *   <li>{@code videoId} — the dedup key within (domain, user_subject): the same video is
- *       enqueued at most once (UNIQUE(domain, user_subject, video_id)).</li>
+ *   <li>{@code videoId} — the dedup key within (domain, user_subject); the same video is
+ *       enqueued at most once ({@code UNIQUE(domain, user_subject, video_id)}).</li>
  *   <li>{@code state} / {@code claimedBy} / {@code claimedAt} / {@code attempts} /
- *       {@code lastError} — the queue lifecycle: a worker claims a 'queued' row (stamps
- *       claimed_by + claimed_at, state='claimed'), reports progress/result back.</li>
- *   <li>{@code bytes} / {@code contentPath} — set on {@code done}; the byte count feeds
- *       {@code tube_storage_usage}, the path locates the file on the content PVC.</li>
+ *       {@code lastError} — queue lifecycle fields.</li>
+ *   <li>{@code bytes} / {@code contentPath} — set on {@code done}; the byte count is
+ *       added to {@code tube_storage_usage}, the path locates the file on the content
+ *       PVC.</li>
  * </ul>
+ *
+ * @see DownloadJobRepository
+ * @see DownloadJobService
+ * @see TubeDownloadWorkerController
  */
 @Table("tube_download_job")
 public record DownloadJob(
@@ -82,6 +94,12 @@ public record DownloadJob(
      *  (pause-on-full — the queue never spins/throw-loops on a full budget). */
     public static final String STATE_SKIPPED = "skipped";
 
+    /**
+     * Returns {@code true} when this job is in the {@link #STATE_QUEUED} state — eligible
+     * to be claimed by a worker.
+     *
+     * @return {@code true} iff {@code state.equals(STATE_QUEUED)}
+     */
     public boolean isQueued() {
         return STATE_QUEUED.equals(state);
     }

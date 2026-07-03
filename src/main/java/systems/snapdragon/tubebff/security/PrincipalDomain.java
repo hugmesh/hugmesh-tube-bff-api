@@ -41,15 +41,23 @@ public class PrincipalDomain {
     }
 
     /**
-     * The domain to scope this principal's queries to: {@code null} for SUPERADMIN
-     * (cross-domain bypass), else the issuer-derived {@code DOMAIN_<x>}.
+     * The domain to scope this principal's repository queries to.
      *
-     * <p>FAIL-CLOSED for a non-SUPERADMIN whose issuer the registry can't resolve
-     * (unknown issuer in multi-brand mode → {@code null} from the registry): we
-     * substitute a sentinel that can match NO row ({@code __deny__}) rather than the
-     * {@code null} bypass, so an unresolved issuer denies rather than escalates. In
-     * single-issuer mode the registry always resolves {@code "default"}, so this
-     * sentinel never fires there.
+     * <ul>
+     *   <li>SUPERADMIN ⇒ {@code null} — the {@link DomainScope} cross-domain bypass
+     *       (no domain predicate applied in queries, so SUPERADMIN sees all brands).</li>
+     *   <li>Any other principal ⇒ the issuer-derived {@code DOMAIN_<x>} string, or
+     *       the sentinel {@code "__deny__"} when the issuer cannot be resolved (fail-closed:
+     *       an unrecognised issuer matches NO rows rather than inheriting the {@code null}
+     *       bypass).</li>
+     * </ul>
+     *
+     * <p>In single-issuer mode the registry always resolves {@code "default"}, so the
+     * {@code "__deny__"} sentinel never fires there.
+     *
+     * @param jwt the validated JWT from the authenticated principal
+     * @return {@code null} for SUPERADMIN, the issuer-derived domain string for all other
+     *         principals, or {@code "__deny__"} when the issuer is unresolvable
      */
     public String forScope(Jwt jwt) {
         if (Roles.isSuperadmin(jwt)) {

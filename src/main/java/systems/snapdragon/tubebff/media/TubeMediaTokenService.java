@@ -7,6 +7,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.util.Base64;
 
@@ -128,7 +129,7 @@ public final class TubeMediaTokenService {
             mac.init(new SecretKeySpec(keyBytes, HMAC_ALG));
             String input = "%s|%s|%s|%d".formatted(sub, domain, path, exp);
             return mac.doFinal(input.getBytes(StandardCharsets.UTF_8));
-        } catch (Exception e) {
+        } catch (GeneralSecurityException e) {
             throw new IllegalStateException("HMAC-SHA256 failed (JCA misconfiguration)", e);
         }
     }

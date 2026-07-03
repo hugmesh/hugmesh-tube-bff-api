@@ -54,8 +54,14 @@ public class GoogleConnectState {
         this.hmacKey = props.decodeStateHmacKey();   // fail-closed: throws unless >=16 bytes
     }
 
-    /** Sign a fresh state binding {@code subject} + {@code domain} for the connect flow,
-     *  valid for {@link #TTL}. */
+    /**
+     * Sign a fresh state value binding {@code subject} and {@code domain} for the connect
+     * flow, valid for {@link #TTL} (10 minutes) from now.
+     *
+     * @param subject the Casdoor subject of the acting principal
+     * @param domain  the brand of the acting principal
+     * @return the signed state string: {@code base64url(payload) + "." + base64url(HMAC)}
+     */
     public String sign(String subject, String domain) {
         return sign(subject, domain, Instant.now().plus(TTL));
     }

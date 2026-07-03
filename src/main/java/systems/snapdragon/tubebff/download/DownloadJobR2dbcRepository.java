@@ -10,16 +10,19 @@ import reactor.core.publisher.Mono;
 import java.time.Instant;
 
 /**
- * Spring Data R2DBC repository for {@code tube_download_job} — the download WORK-QUEUE
- * (schema in Liquibase {@code db/changelog/005-tube-download-queue.xml}). MATCHES the
- * snapdragon-federation-api exemplar: DERIVED finders where derivation suffices, plus
- * {@code @Query} (as {@code static final String} CONSTANTS, never inline literals) for
- * the guarded-CAS lifecycle transitions + the LIMITed claim-candidate read that
- * derivation cannot express.
+ * Spring Data R2DBC repository for the {@code tube_download_job} download work-queue.
  *
- * <p>The {@code state IN ('claimed','downloading')} guards and the literal target states
- * are spliced from {@link DownloadJob}'s {@code STATE_*} constants — compile-time
- * constant expressions, so the SQL stays an exact copy of the original literals.
+ * <p>Schema: Liquibase {@code db/changelog/005-tube-download-queue.xml}. Follows the
+ * snapdragon-federation-api exemplar: derived finders where derivation suffices, plus
+ * constant-{@code @Query} strings (never inline literals) for the guarded-CAS lifecycle
+ * transitions and the LIMIT-bounded claim-candidate read that derivation cannot express.
+ *
+ * <p>The {@code STATE_*} constants from {@link DownloadJob} are spliced into each SQL
+ * string as compile-time constant expressions, ensuring the literals in SQL and in the
+ * entity remain byte-identical and cannot drift.
+ *
+ * @see DownloadJobRepository
+ * @see DownloadJob
  */
 public interface DownloadJobR2dbcRepository extends R2dbcRepository<DownloadJob, String> {
 
@@ -28,6 +31,14 @@ public interface DownloadJobR2dbcRepository extends R2dbcRepository<DownloadJob,
             "SELECT * FROM tube_download_job WHERE state = '" + DownloadJob.STATE_QUEUED + "' "
             + "ORDER BY created_at, id LIMIT :lim";
 
+    /**
+     * Read up to {@code lim} of the oldest queued jobs (cross-domain) for the claim
+     * batch. Ordered by {@code created_at, id} to favour FIFO. A LIMIT clause is required
+     * which derivation cannot express, hence the constant {@code @Query}.
+     *
+     * @param lim the maximum number of candidate rows to return
+     * @return a {@code Flux} of up to {@code lim} queued {@link DownloadJob} rows
+     */
     @Query(QUEUED_CANDIDATES)
     Flux<DownloadJob> findQueuedCandidates(@Param("lim") int lim);
 
@@ -63,6 +74,14 @@ public interface DownloadJobR2dbcRepository extends R2dbcRepository<DownloadJob,
             + "claimed_by = :worker, claimed_at = now(), attempts = attempts + 1, "
             + "updated_at = now() WHERE id = :id AND state = '" + DownloadJob.STATE_QUEUED + "'";
 
+    /**
+     * Atomically CAS one job from {@code queued -> claimed} for a given worker, stamping
+     * {@code claimed_by}, {@code claimed_at}, and incrementing {@code attempts}.
+     *
+     * @param id     the job id to claim
+     * @param worker the worker identity string to stamp as {@code claimed_by}
+     * @return a {@code Mono} emitting rows-updated (1 = won; 0 = lost race)
+     */
     @Modifying
     @Query(CLAIM_ONE)
     Mono<Long> claimOne(@Param("id") String id, @Param("worker") String worker);
@@ -72,6 +91,14 @@ public interface DownloadJobR2dbcRepository extends R2dbcRepository<DownloadJob,
             + "updated_at = now() WHERE id = :id AND claimed_by = :worker "
             + "AND state = '" + DownloadJob.STATE_CLAIMED + "'";
 
+    /**
+     * CAS {@code claimed -> downloading} for the worker that holds the claim. Guarded on
+     * {@code claimed_by = :worker} so only the owning worker can advance the state.
+     *
+     * @param id     the job id
+     * @param worker the worker that owns the claim
+     * @return a {@code Mono} emitting rows-updated (1 = advanced; 0 = wrong state/worker)
+     */
     @Modifying
     @Query(MARK_DOWNLOADING)
     Mono<Long> markDownloading(@Param("id") String id, @Param("worker") String worker);
@@ -82,6 +109,16 @@ public interface DownloadJobR2dbcRepository extends R2dbcRepository<DownloadJob,
             + "WHERE id = :id AND claimed_by = :worker AND state IN ('"
             + DownloadJob.STATE_CLAIMED + "', '" + DownloadJob.STATE_DOWNLOADING + "')";
 
+    /**
+     * CAS {@code claimed|downloading -> done}, stamping {@code bytes} and
+     * {@code content_path}. Guarded on the worker owning the claim.
+     *
+     * @param id     the job id
+     * @param worker the worker that owns the claim
+     * @param bytes  the downloaded file size in bytes
+     * @param path   the content path on the PVC (e.g. {@code /acme/alice/videos/vid.mp4})
+     * @return a {@code Mono} emitting rows-updated (1 = completed; 0 = wrong state/worker)
+     */
     @Modifying
     @Query(MARK_DONE)
     Mono<Long> markDone(@Param("id") String id, @Param("worker") String worker,
@@ -93,6 +130,15 @@ public interface DownloadJobR2dbcRepository extends R2dbcRepository<DownloadJob,
             + "WHERE id = :id AND claimed_by = :worker AND state IN ('"
             + DownloadJob.STATE_CLAIMED + "', '" + DownloadJob.STATE_DOWNLOADING + "')";
 
+    /**
+     * CAS {@code claimed|downloading -> failed}, stamping {@code last_error}. Guarded on
+     * the worker owning the claim.
+     *
+     * @param id     the job id
+     * @param worker the worker that owns the claim
+     * @param err    the error message to record in {@code last_error}
+     * @return a {@code Mono} emitting rows-updated (1 = failed; 0 = wrong state/worker)
+     */
     @Modifying
     @Query(MARK_FAILED)
     Mono<Long> markFailed(@Param("id") String id, @Param("worker") String worker,

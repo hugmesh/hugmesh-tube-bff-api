@@ -10,12 +10,16 @@ import reactor.core.publisher.Mono;
 import java.time.Instant;
 
 /**
- * Spring Data R2DBC repository for {@code tube_subscription} — the download-queue ENQUEUE
- * SOURCE view (latest-video fields; schema in Liquibase
- * {@code db/changelog/006-tube-subscription.xml} + {@code 007-...-download-fields.xml}).
- * MATCHES the federation exemplar: derived finder pairs (domain-scoped vs SUPERADMIN
- * un-pinned) + one constant-{@code @Query} for the in-place latest-video refresh that the
- * find-then-write upsert performs (a partial UPDATE derivation cannot express).
+ * Spring Data R2DBC repository for the {@code tube_subscription} table, serving the
+ * download-queue enqueue source view (latest-video fields).
+ *
+ * <p>Schema: Liquibase {@code db/changelog/006-tube-subscription.xml} +
+ * {@code 007-...-download-fields.xml}. Follows the federation exemplar: derived finder
+ * pairs (domain-scoped vs SUPERADMIN un-pinned) plus one constant-{@code @Query} for the
+ * in-place latest-video refresh that a partial UPDATE derivation cannot express.
+ *
+ * @see SubscriptionRepository
+ * @see systems.snapdragon.tubebff.download.TubeSubscription
  */
 public interface SubscriptionR2dbcRepository extends R2dbcRepository<TubeSubscription, String> {
 
@@ -24,6 +28,17 @@ public interface SubscriptionR2dbcRepository extends R2dbcRepository<TubeSubscri
             + "latest_video_id = :lvi, latest_video_title = :lvt, updated_at = now() "
             + "WHERE id = :id";
 
+    /**
+     * In-place refresh of the latest-video fields for an existing subscription row.
+     * Called by the find-then-write upsert in {@link SubscriptionRepository} when a
+     * re-sync finds the (user, channel) row already present.
+     *
+     * @param id  the subscription row id to update
+     * @param ct  the updated channel title
+     * @param lvi the latest video id (the dedup key fed to the download queue)
+     * @param lvt the latest video title (display label)
+     * @return a {@code Mono} emitting rows-updated (1 on success)
+     */
     @Modifying
     @Query(REFRESH_LATEST)
     Mono<Long> refreshLatest(@Param("id") String id, @Param("ct") String ct,

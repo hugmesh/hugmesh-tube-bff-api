@@ -59,9 +59,14 @@ public class GoogleConnectService {
     }
 
     /**
-     * The Google consent URL the UI redirects the user to. Carries the signed state that
-     * binds the acting principal (subject + brand), so the bearer-less callback can
-     * re-bind them.
+     * Build the Google consent URL the UI redirects the user to. The URL carries
+     * {@code access_type=offline&prompt=consent} (to obtain a refresh token on first
+     * consent) and an HMAC-signed {@code state} binding this principal's subject and
+     * brand — the CSRF token and callback binder for the bearer-less redirect hop.
+     *
+     * @param auth the authenticated principal
+     * @return a {@code Mono} emitting the consent URL string; errors (403) when the owner
+     *         cannot be resolved
      */
     public Mono<String> authorizeUrl(Authentication auth) {
         // Resolve the owner, then build the signed consent URL for the Google OAuth flow.
@@ -88,13 +93,20 @@ public class GoogleConnectService {
     }
 
     /**
-     * Handle Google's redirect: verify the signed state against the principal resolved
-     * for THIS request, exchange the code, encrypt the refresh token, and persist the
-     * link. The state is the source of the CSRF + principal binding — a tampered/expired/
-     * cross-principal state is rejected BEFORE any code exchange.
+     * Handle Google's consent redirect. Verifies the HMAC-signed {@code stateParam}
+     * against the principal resolved for this request (CSRF check + cross-principal
+     * protection), then exchanges {@code code} for tokens, AEAD-encrypts the refresh
+     * token, soft-revokes any prior live link, and inserts a fresh link row.
      *
-     * @param auth the request principal (when the callback CAN carry a bearer); the state
-     *             is still verified against the resolved owner so the two must agree.
+     * <p>The state is the authoritative principal binder — a tampered, expired, or
+     * cross-principal state is rejected BEFORE any code exchange so no token is wasted.
+     *
+     * @param code       the authorization code from Google's redirect
+     * @param stateParam the signed state value (HMAC-SHA256; minted by
+     *                   {@link #authorizeUrl})
+     * @param auth       the authenticated principal (bearer-attached by the BFF gateway)
+     * @return a {@code Mono} emitting the newly inserted {@link TubeGoogleLink}; errors
+     *         (403) on a bad state or (502) when Google does not return a refresh token
      */
     public Mono<TubeGoogleLink> callback(String code, String stateParam, Authentication auth) {
         // Resolve the owner, then verify the signed state and exchange the authorization code.
@@ -141,9 +153,14 @@ public class GoogleConnectService {
     }
 
     /**
-     * Disconnect: best-effort revoke the stored refresh token at Google (decrypted only
-     * in memory for the revoke call), then soft-revoke the row. Idempotent — a no-op when
-     * there is no live link.
+     * Disconnect the current user's Google account. Decrypts the stored refresh token in
+     * memory (only), best-effort revokes it at Google, then soft-revokes the link row
+     * (row is retained for audit). Idempotent — a no-op when there is no live link.
+     * A Google revoke failure is swallowed so the soft-revoke always proceeds.
+     *
+     * @param auth the authenticated principal
+     * @return a {@code Mono} that completes empty on success; errors (403) when the owner
+     *         cannot be resolved
      */
     public Mono<Void> disconnect(Authentication auth) {
         return Mono.fromCallable(() -> owner.resolve(auth))

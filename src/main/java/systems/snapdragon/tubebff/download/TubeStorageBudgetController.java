@@ -1,6 +1,8 @@
 package systems.snapdragon.tubebff.download;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -47,9 +49,27 @@ public class TubeStorageBudgetController {
         this.principalDomain = principalDomain;
     }
 
+    /**
+     * Set the download storage budget cap for a target user. The acting admin's brand is
+     * derived server-side; a scoped ADMIN can only set budgets for users in their own brand.
+     * A negative {@code budgetBytes} is clamped to 0, immediately pausing all downloads
+     * for that user.
+     *
+     * @param body the budget request — target {@code userSubject} and {@code budgetBytes};
+     *             domain is NEVER read from the body (server-derived)
+     * @param auth the acting admin's authentication
+     * @return a {@code Mono} emitting the updated {@link TubeDownloadDto.Usage} row
+     */
     @Operation(operationId = "setStorageBudget",
             summary = "Set a target user's download storage budget (bytes). "
             + "ADMIN/SUPERADMIN, own-brand (brand server-derived).")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Updated storage usage row"),
+        @ApiResponse(responseCode = "400", description = "Validation failure (budgetBytes must be >= 0)"),
+        @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
+        @ApiResponse(responseCode = "403", description = "Caller lacks ROLE_ADMIN or ROLE_SUPERADMIN"),
+        @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
     @PreAuthorize(TUBE_BUDGET)
     @PostMapping
     public Mono<TubeDownloadDto.Usage> setBudget(

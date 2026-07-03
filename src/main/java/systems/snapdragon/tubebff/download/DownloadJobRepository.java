@@ -9,15 +9,23 @@ import systems.snapdragon.commons.tenancy.DomainScope;
 import java.time.Instant;
 
 /**
- * Reactive (R2DBC) store for {@code tube_download_job} — the download WORK-QUEUE (schema
- * in Liquibase {@code db/changelog/005-tube-download-queue.xml}).
+ * Reactive (R2DBC) store for the {@code tube_download_job} download work-queue.
  *
- * <p>Refactored (2026-06-18 data-access standard) from hand-written
- * {@code DatabaseClient} raw SQL to delegate to {@link DownloadJobR2dbcRepository}
- * (Spring Data R2DBC: DERIVED finders + constant-{@code @Query} guarded CASes), matching
- * the snapdragon-federation-api exemplar. The public surface, the dedup/find-then-insert
- * idiom, the per-row guarded-CAS claim, the lifecycle transitions, ordering, and
- * domain-scoping are UNCHANGED.
+ * <p>Schema: Liquibase {@code db/changelog/005-tube-download-queue.xml}. Refactored
+ * (2026-06-18 data-access standard) from hand-written {@code DatabaseClient} raw SQL to
+ * delegate to {@link DownloadJobR2dbcRepository} (derived finders + constant-{@code @Query}
+ * guarded CASes). Public surface, dedup/find-then-insert idiom, per-row guarded-CAS claim,
+ * lifecycle transitions, ordering, and domain-scoping are unchanged.
+ *
+ * <h2>Concurrency model</h2>
+ *
+ * <p>The claim path uses a guarded CAS: each job is read as a candidate, then a single
+ * UPDATE guarded on {@code state = 'queued'} stamps exactly one worker. A rows-updated
+ * count of 0 means another worker won the race; that candidate is silently skipped.
+ *
+ * @see DownloadJobR2dbcRepository
+ * @see DownloadJobService
+ * @see DownloadJob
  */
 @Repository
 public class DownloadJobRepository {

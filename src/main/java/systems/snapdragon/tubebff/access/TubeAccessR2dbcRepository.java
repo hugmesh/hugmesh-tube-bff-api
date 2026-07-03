@@ -10,33 +10,51 @@ import reactor.core.publisher.Mono;
 import java.time.Instant;
 
 /**
- * Spring Data R2DBC repository for {@code tube_access} (schema in Liquibase
- * {@code db/changelog/004-tube-access.xml}). MATCHES the snapdragon-federation-api
- * reactive-repository exemplar: a {@link R2dbcRepository} interface with DERIVED query
- * methods, plus a single {@code @Query} (a {@code static final String} constant, never
- * an inline literal) for the CAS update derivation cannot express.
+ * Spring Data R2DBC repository for the {@code tube_access} table.
  *
- * <p>The {@link systems.snapdragon.commons.tenancy.DomainScope} null-vs-non-null
- * predicate (a {@code null} domain = the SUPERADMIN cross-domain bypass = NO predicate)
- * is reproduced with PAIRS of derived finders — a brand-scoped variant
- * ({@code ...AndDomain...}) and an un-pinned variant — exactly as the federation
- * {@code FederationOverrideRepository} does ({@code findAllByOrderByTsDesc} vs
- * {@code findByDomainOrderByTsDesc}). {@link TubeAccessRepository} dispatches between
- * the pair on {@code DomainScope.isUnscoped(domain)}.
+ * <p>Schema: Liquibase {@code db/changelog/004-tube-access.xml}. Follows the
+ * snapdragon-federation-api reactive-repository exemplar: derived finders where derivation
+ * suffices, plus one constant-{@code @Query} ({@link #REVOKE_CAS}) for the guarded CAS
+ * update that derivation cannot express.
+ *
+ * <h2>Domain-scope pairs</h2>
+ *
+ * <p>Every read has two variants to implement the
+ * {@link systems.snapdragon.commons.tenancy.DomainScope} null-vs-non-null predicate:
+ * a brand-scoped variant ({@code ...AndDomain...}) for a scoped admin and an un-pinned
+ * variant for the SUPERADMIN ({@code null} domain = no predicate).
+ * {@link TubeAccessRepository} dispatches between the pair on
+ * {@code DomainScope.isUnscoped(domain)}.
+ *
+ * <h2>State parameter convention</h2>
  *
  * <p>The {@code state = 'active'} filter is passed as the {@link TubeAccess#STATE_ACTIVE}
- * argument (a derived {@code AndState} param), preserving the original literal exactly.
+ * constant argument through the derived {@code AndState} clause, preserving the literal
+ * exactly.
+ *
+ * @see TubeAccessRepository
+ * @see TubeAccess
  */
 public interface TubeAccessR2dbcRepository extends R2dbcRepository<TubeAccess, String> {
 
-    /** Compare-and-swap {@code active -> revoked} for one row id, stamping
-     *  {@code revoked_at}, guarded on the current state so exactly ONE writer wins.
-     *  Derivation cannot express the {@code now()} / literal-state SET, so this is a
-     *  constant {@code @Query} (per the data-access standard). */
+    /**
+     * The CAS SQL string: transitions one row from {@code active} to {@code revoked},
+     * stamping {@code revoked_at = now()}, guarded on {@code state = 'active'} so exactly
+     * one concurrent writer wins. Derivation cannot express a {@code now()} call or a
+     * literal-state SET, so this is a constant {@code @Query} per the data-access standard.
+     */
     String REVOKE_CAS =
             "UPDATE tube_access SET state = 'revoked', revoked_at = now() "
             + "WHERE id = :id AND state = 'active'";
 
+    /**
+     * CAS {@code active -> revoked} for one row by id. Returns the number of rows updated:
+     * 1 when this caller won the race; 0 when the row was already revoked by a concurrent
+     * writer.
+     *
+     * @param id the row id to revoke
+     * @return a {@code Mono} emitting the rows-updated count (0 or 1)
+     */
     @Modifying
     @Query(REVOKE_CAS)
     Mono<Long> revokeIfActive(@Param("id") String id);

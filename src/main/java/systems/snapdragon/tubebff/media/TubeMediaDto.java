@@ -3,7 +3,10 @@ package systems.snapdragon.tubebff.media;
 import java.time.Instant;
 
 /**
- * Response DTOs for the media URL signing surface.
+ * Response DTOs for the media URL signing surface ({@code /bff/tube/media}).
+ *
+ * @see TubeMediaController
+ * @see TubeMediaTokenService
  */
 public final class TubeMediaDto {
 

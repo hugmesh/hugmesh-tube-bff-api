@@ -9,14 +9,18 @@ import systems.snapdragon.commons.tenancy.DomainScope;
 import java.time.Instant;
 
 /**
- * Reactive (R2DBC) store for {@code tube_subscription} — the per-user subscribed-channel
- * content model that is the ENQUEUE SOURCE for the download work-queue (schema in
- * Liquibase {@code db/changelog/006-tube-subscription.xml}).
+ * Reactive (R2DBC) store for the {@code tube_subscription} per-user subscribed-channel
+ * content model — the enqueue source for the download work-queue.
  *
- * <p>Refactored (2026-06-18 data-access standard) from hand-written
- * {@code DatabaseClient} raw SQL to delegate to {@link SubscriptionR2dbcRepository}
- * (Spring Data R2DBC). The OWNER + DOMAIN scoping, the find-then-write upsert idiom,
- * ordering, and the latest-video refresh-on-re-record are UNCHANGED.
+ * <p>Schema: Liquibase {@code db/changelog/006-tube-subscription.xml}. Refactored
+ * (2026-06-18 data-access standard) from hand-written {@code DatabaseClient} raw SQL to
+ * delegate to {@link SubscriptionR2dbcRepository} (derived finders + constant-{@code @Query}
+ * partial UPDATE). Owner + domain scoping, find-then-write upsert idiom, ordering, and
+ * latest-video refresh-on-re-record are unchanged.
+ *
+ * @see SubscriptionR2dbcRepository
+ * @see TubeSubscription
+ * @see DownloadJobService
  */
 @Repository
 public class SubscriptionRepository {
@@ -27,8 +31,15 @@ public class SubscriptionRepository {
         this.repo = repo;
     }
 
-    /** The owner's subscribed channels WITHIN a brand — the enqueue source. Owner + domain
-     *  scoped (un-pinned for the SUPERADMIN {@code null}-domain bypass). */
+    /**
+     * All subscribed channels for a user within a brand, ordered by channel title then id.
+     * Domain-scoped for ADMIN callers; un-pinned (no domain predicate) for SUPERADMIN
+     * {@code null}-domain bypass.
+     *
+     * @param userSubject the Casdoor subject of the owner
+     * @param domain      the brand; {@code null}/blank activates the SUPERADMIN bypass
+     * @return a {@code Flux} of {@link TubeSubscription} rows
+     */
     public Flux<TubeSubscription> listForOwner(String userSubject, String domain) {
         return DomainScope.isUnscoped(domain)
                 ? repo.findByUserSubjectOrderByChannelTitleAscChannelIdAsc(userSubject)
@@ -36,9 +47,19 @@ public class SubscriptionRepository {
     }
 
     /**
-     * Idempotent insert/update of a subscription on its dedup triple
-     * (domain, user_subject, channel_id). Find-then-write (H2-portable). On a re-record of
-     * the same channel, the latest video fields are refreshed.
+     * Idempotent insert/update of a subscription on its dedup triple (domain, user_subject,
+     * channel_id). Uses a find-then-write pattern that is H2 + Postgres portable. On a
+     * re-record of the same channel the latest-video fields ({@code channelTitle},
+     * {@code latestVideoId}, {@code latestVideoTitle}) are refreshed in-place; on a
+     * first-record a new row is inserted with a generated UUID id.
+     *
+     * @param userSubject      the Casdoor subject of the owner
+     * @param channelId        the YouTube channel id (dedup key)
+     * @param channelTitle     the channel display title (nullable — coerced to "" if absent)
+     * @param latestVideoId    the most-recent video id (nullable — coerced to "")
+     * @param latestVideoTitle the most-recent video title (nullable — coerced to "")
+     * @param domain           the brand; {@code null}/blank defaults to the platform default domain
+     * @return a {@code Mono} emitting the saved or updated {@link TubeSubscription} row
      */
     public Mono<TubeSubscription> upsert(String userSubject, String channelId, String channelTitle,
                                          String latestVideoId, String latestVideoTitle, String domain) {

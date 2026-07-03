@@ -16,16 +16,30 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * Renders {@link ApiException} as the {@code {"error": message}} JSON body (and
- * the carried status) the UIs read, AND maps jakarta Bean Validation failures to a
- * clean {@code 400} in the SAME shape (with a {@code fields} map of per-field
- * errors). Works unchanged under WebFlux: {@code @RestControllerAdvice} +
- * {@code @ExceptionHandler} returning a {@code ResponseEntity} is handled
- * reactively (a controller's {@code Mono.error(...)} is routed here).
+ * Global exception handler that translates application and validation exceptions into
+ * consistent JSON error bodies for the tube BFF surface.
  *
- * <p>Validation shapes handled (the security-hardening "Bean Validation on all
- * paths" task):
+ * <h2>Error shapes</h2>
+ *
+ * <pre>
+ *   { "error": "message" }               — ApiException (carries its own HTTP status)
+ *   { "error": "validation failed",
+ *     "fields": { "field": "message" } }  — @Valid @RequestBody DTO failures (400)
+ *   { "error": "validation failed",
+ *     "detail": "reason" }               — malformed body / unparseable param (400)
+ * </pre>
+ *
+ * <h2>WebFlux compatibility</h2>
+ *
+ * <p>{@code @RestControllerAdvice} + {@code @ExceptionHandler} returning
+ * {@code ResponseEntity} works under WebFlux without any additional plumbing — a
+ * controller's {@code Mono.error(...)} is routed here by the framework.
+ *
+ * <h2>Handled exception types</h2>
+ *
  * <ul>
+ *   <li>{@link ApiException} — the single domain error type (thrown by all services +
+ *       controllers); status and message come from the exception.</li>
  *   <li>{@link WebExchangeBindException} — a {@code @Valid @RequestBody}
  *       DTO whose field constraints failed;</li>
  *   <li>{@link ConstraintViolationException} — a {@code @Validated} controller's

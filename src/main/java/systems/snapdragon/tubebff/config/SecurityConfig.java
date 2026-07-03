@@ -1,5 +1,6 @@
 package systems.snapdragon.tubebff.config;
 
+import org.aopalliance.intercept.MethodInvocation;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -314,18 +315,18 @@ public class SecurityConfig {
      * methods without an explicit {@code ROLE_ADMIN}. (A bare {@code RoleHierarchy}
      * bean is NOT auto-applied to {@code @PreAuthorize} in the reactive
      * method-security path, so the expression handler is set explicitly.) Wired via
-     * {@link DefaultAuthorizationManagerFactory} — the {@code setRoleHierarchy}/
-     * {@code setDefaultRolePrefix} setters on the expression handler itself are
-     * deprecated for removal as of Spring Security 7.0.
+     * the non-deprecated {@link DefaultAuthorizationManagerFactory} (the handler's own
+     * {@code setRoleHierarchy}/{@code setDefaultRolePrefix} setters are deprecated in
+     * favour of this factory) — behaviourally identical role-hierarchy + ROLE_ prefix
+     * resolution.
      */
     @Bean
     MethodSecurityExpressionHandler tubeMethodSecurityExpressionHandler(RoleHierarchy roleHierarchy) {
-        DefaultAuthorizationManagerFactory<org.aopalliance.intercept.MethodInvocation> authorizationManagerFactory =
+        DefaultAuthorizationManagerFactory<MethodInvocation> authorizationManagerFactory =
                 new DefaultAuthorizationManagerFactory<>();
         authorizationManagerFactory.setRoleHierarchy(roleHierarchy);
         // Keep the default ROLE_ prefix explicit so hasRole('ADMIN') maps to ROLE_ADMIN.
         authorizationManagerFactory.setRolePrefix(new GrantedAuthorityDefaults("ROLE_").getRolePrefix());
-
         DefaultMethodSecurityExpressionHandler handler = new DefaultMethodSecurityExpressionHandler();
         handler.setAuthorizationManagerFactory(authorizationManagerFactory);
         return handler;

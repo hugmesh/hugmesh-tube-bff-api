@@ -1,6 +1,8 @@
 package systems.snapdragon.tubebff.google;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -46,9 +48,22 @@ public class TubeSubscriptionsController {
         this.sync = sync;
     }
 
+    /**
+     * Return the owner's stored subscribed channels from the local DB — no Google network
+     * call. Channels are ordered by title then id.
+     *
+     * @param auth the authenticated principal
+     * @return a {@code Mono} emitting the {@link TubeGoogleDto.SubscriptionList}
+     */
     @Operation(operationId = "listSubscriptions",
             summary = "List the current user's stored subscribed channels (owner-scoped; "
             + "no network call). Use-gated.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "List of subscribed channels (may be empty if not yet synced)"),
+        @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
+        @ApiResponse(responseCode = "403", description = "No active tube_access grant or brand unresolvable"),
+        @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
     @PreAuthorize(AUTHENTICATED)
     @GetMapping
     public Mono<TubeGoogleDto.SubscriptionList> list(Authentication auth) {
@@ -59,10 +74,27 @@ public class TubeSubscriptionsController {
                 .map(TubeGoogleDto.SubscriptionList::new);
     }
 
+    /**
+     * Sync the owner's YouTube subscriptions from Google: decrypt stored refresh token
+     * in memory, mint an access token, page all subscription pages, and idempotently
+     * UPSERT each channel. A refresh failure marks {@code reauth_required} and stops.
+     *
+     * @param auth the authenticated principal
+     * @return a {@code Mono} emitting 200 with the {@link TubeGoogleDto.SyncResult}
+     *         (count of channels UPSERTed)
+     */
     @Operation(operationId = "syncSubscriptions",
             summary = "Sync the current user's subscriptions from Google (refresh -> page "
             + "subscriptions.list?mine=true -> idempotent UPSERT). A failed refresh marks "
             + "reauth_required and STOPS. Use-gated + owner-scoped.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Sync complete; returns channel count UPSERTed"),
+        @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
+        @ApiResponse(responseCode = "403", description = "No tube_access grant, brand unresolvable, or reauth_required"),
+        @ApiResponse(responseCode = "409", description = "No live Google connection (connect first)"),
+        @ApiResponse(responseCode = "502", description = "Google API call failed"),
+        @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
     @PreAuthorize(AUTHENTICATED)
     @PostMapping("/sync")
     public Mono<ResponseEntity<TubeGoogleDto.SyncResult>> sync(Authentication auth) {

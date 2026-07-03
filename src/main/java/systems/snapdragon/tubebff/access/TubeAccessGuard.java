@@ -5,46 +5,78 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import systems.snapdragon.commons.security.DomainRegistry;
-import systems.snapdragon.tubebff.security.PrincipalDomain;
 import systems.snapdragon.commons.security.Roles;
 import systems.snapdragon.commons.web.ApiException;
+import systems.snapdragon.tubebff.security.PrincipalDomain;
 
 import java.time.Instant;
 import java.util.List;
 
 /**
- * THE LOAD-BEARING enforcement of the use grant/timeout/ban overlay: it resolves
- * whether a request principal may USE the tube service by reading the DYNAMIC
- * {@code tube_access} desired-state and applying the precedence rule. The
- * {@code OwncastBroadcastGuard} twin — with the SAME deliberate stance: use is
- * <b>DEFAULT-DENY and GRANT-ONLY</b>. The base {@code ROLE_TUBE} is the gateway
- * route/connect floor only; it does <b>NOT</b> by itself confer use — an active
- * {@link TubeAccess#TYPE_USE} grant is the ONLY thing that lifts a user above the
- * default-deny floor (besides the SUPERADMIN infra exemption).
+ * Load-bearing enforcement of the {@code tube_access} use grant / timeout / ban overlay.
+ * Resolves whether a request principal may USE the tube service by reading the dynamic
+ * desired-state table and applying the precedence rule.
  *
- * <p>A static {@code @PreAuthorize} on the controller CANNOT consult the DB for a
- * per-principal grant or ban, so — exactly as owncast-bff / wiki-bff / admin-bff enforce
- * their overlays at request time rather than leaving them inert — this guard is invoked
- * programmatically by the use-affecting endpoints, loads the principal's
- * {@code tube_access} rows for their brand, and decides:
+ * <h2>Stance (DEFAULT-DENY and GRANT-ONLY)</h2>
+ *
+ * <p>The base {@code ROLE_TUBE} is the gateway route/connect floor only; it does NOT by
+ * itself confer use. An active {@link TubeAccess#TYPE_USE} grant is the only thing that
+ * lifts a user above the default-deny floor (besides the SUPERADMIN infra exemption).
+ *
+ * <p>A static {@code @PreAuthorize} on the controller cannot consult the DB for a
+ * per-principal grant or ban — this guard is invoked programmatically by every
+ * use-affecting endpoint.
+ *
+ * <h2>Reactive pipeline (assertCanUse)</h2>
  *
  * <pre>
- *   USE ALLOWED  ==  SUPERADMIN (infra, exempt — no DB read)
- *                    OR ( an ACTIVE non-expired USE grant for this user+domain
- *                         AND NOT an ACTIVE non-expired BAN/TIMEOUT for this user+domain )
+ *   auth
+ *     │
+ *     ├─ SUPERADMIN? ──yes──► Mono.empty() (exempt, no DB read)
+ *     │
+ *     └─ resolve (subject, domain)
+ *          │
+ *          ▼
+ *     repo.activeFor(subject, domain)               ← Flux of ACTIVE rows
+ *          │
+ *          ▼
+ *     .filter(isEffectiveAt(now))                   ← drop expired timeouts
+ *          │
+ *          ▼
+ *     .collectList()
+ *          │
+ *          ▼
+ *     banned?  ──yes──► Mono.error(403 "banned")
+ *     granted? ──yes──► Mono.empty()  (allowed)
+ *     default  ──────► Mono.error(403 "no grant")
  * </pre>
  *
- * <p>PRECEDENCE — the load-bearing rule:
+ * <h2>Precedence rule</h2>
+ *
  * <ul>
- *   <li>DEFAULT-DENY: no grant ⇒ cannot use (the bare ROLE_TUBE floor never substitutes
- *       for the grant);</li>
- *   <li>an ACTIVE non-expired BAN/TIMEOUT DENIES even a principal who holds an active
- *       USE grant (<b>ban &gt; grant</b> — the ban wins);</li>
- *   <li>SUPERADMIN is UNAFFECTED by a ban (infra control plane) — checked FIRST, before
- *       any DB read;</li>
- *   <li>an EXPIRED timeout auto-restores: {@link TubeAccess#isEffectiveAt} treats a past
- *       {@code expires_at} as no-longer-active, so the row stops denying WITHOUT a write.</li>
+ *   <li>DEFAULT-DENY: no grant means cannot use;</li>
+ *   <li>an ACTIVE non-expired BAN denies even a principal who holds an active USE grant
+ *       (<b>ban &gt; grant</b>);</li>
+ *   <li>SUPERADMIN is exempt from the ban (infra control plane) — checked first,
+ *       before any DB read;</li>
+ *   <li>an EXPIRED timeout auto-restores: {@link TubeAccess#isEffectiveAt} treats a
+ *       past {@code expires_at} as inactive without a write.</li>
  * </ul>
+ *
+ * <h2>Caller-role access matrix</h2>
+ *
+ * <pre>
+ *   Caller           │ Outcome
+ *   ─────────────────┼──────────────────────────────────────────────────────────
+ *   ROLE_SUPERADMIN  │ always allowed (exempt) — no DB read
+ *   ROLE_TUBE (grant)│ allowed when active use grant AND no active ban
+ *   ROLE_TUBE (ban)  │ 403 — banned (even if a grant also exists)
+ *   ROLE_TUBE (none) │ 403 — no use grant (default-deny)
+ * </pre>
+ *
+ * @see TubeAccess
+ * @see TubeAccessRepository
+ * @see systems.snapdragon.tubebff.security.PrincipalDomain
  */
 @Component
 public class TubeAccessGuard {
@@ -59,10 +91,20 @@ public class TubeAccessGuard {
 
     /**
      * Enforce use access for the request principal, applying the DEFAULT-DENY overlay
-     * precedence. Completes (passes through the empty Mono) when use is allowed; errors
-     * with a 403 {@link ApiException} when an active ban/timeout denies it OR when there is
-     * no active use grant. Wrap a use-affecting endpoint as
-     * {@code guard.assertCanUse(auth).then(...)}.
+     * precedence.
+     *
+     * <p>Completes empty ({@code Mono<Void>}) when use is allowed; signals a 403
+     * {@link ApiException} when an active ban/timeout denies use OR when there is no active
+     * use grant. Compose a use-affecting endpoint chain as
+     * {@code guard.assertCanUse(auth).then(Mono.defer(() -> yourHandler))}.
+     *
+     * @param auth the request principal; {@code null} or non-JWT principal is treated as
+     *             a non-superadmin with the default domain (no DB bypass)
+     * @return an empty {@code Mono} completing when use is permitted, or an error
+     *         {@code Mono} carrying a 403 {@link ApiException} when denied
+     * @throws ApiException (403) embedded in the returned Mono when:
+     *         (a) the principal has an active ban/timeout, or
+     *         (b) the principal has no active use grant (default-deny)
      */
     public Mono<Void> assertCanUse(Authentication auth) {
         // SUPERADMIN is the infra control plane — exempt from the overlay (never banned

@@ -9,14 +9,18 @@ import reactor.core.publisher.Mono;
 import java.time.Instant;
 
 /**
- * Spring Data R2DBC repository for {@code tube_google_link} — the per-(brand,user) Google
- * OAuth connection (schema in Liquibase {@code db/changelog/005-tube-google-link.xml}).
- * Owner-scoped, fail-closed, single-domain (no SUPERADMIN bypass). MATCHES the federation
- * exemplar: a derived live-connection finder + constant-{@code @Query} soft-revoke /
- * reauth-flag UPDATEs (literal-state / now() SETs derivation cannot express).
+ * Spring Data R2DBC repository for the {@code tube_google_link} per-(brand, user) Google
+ * OAuth connection record.
  *
- * <p>The connection is NEVER hard-deleted — a disconnect soft-revokes (stamps
- * {@code revoked_at}); the LIVE connection is the one with {@code revoked_at IS NULL}.
+ * <p>Schema: Liquibase {@code db/changelog/005-tube-google-link.xml}. Owner-scoped,
+ * fail-closed, single-domain (no SUPERADMIN bypass). Follows the federation exemplar: a
+ * derived live-connection finder plus constant-{@code @Query} soft-revoke and reauth-flag
+ * UPDATEs (literal-state / {@code now()} SETs that derivation cannot express). Connections
+ * are NEVER hard-deleted — a disconnect stamps {@code revoked_at}; the LIVE connection has
+ * {@code revoked_at IS NULL}.
+ *
+ * @see TubeGoogleLinkRepository
+ * @see TubeGoogleLink
  */
 public interface TubeGoogleLinkR2dbcRepository extends R2dbcRepository<TubeGoogleLink, String> {
 
@@ -24,6 +28,14 @@ public interface TubeGoogleLinkR2dbcRepository extends R2dbcRepository<TubeGoogl
             "UPDATE tube_google_link SET revoked_at = now() "
             + "WHERE domain = :domain AND user_subject = :user AND revoked_at IS NULL";
 
+    /**
+     * Soft-revoke the LIVE connection for an owner in their brand by stamping
+     * {@code revoked_at = now()}. Idempotent — no-ops when there is no live row.
+     *
+     * @param domain the brand
+     * @param user   the Casdoor subject of the owner
+     * @return a {@code Mono} emitting rows-updated (0 when already revoked)
+     */
     @Modifying
     @Query(SOFT_REVOKE)
     Mono<Long> softRevoke(@Param("domain") String domain, @Param("user") String user);
@@ -32,6 +44,14 @@ public interface TubeGoogleLinkR2dbcRepository extends R2dbcRepository<TubeGoogl
             "UPDATE tube_google_link SET reauth_required = true "
             + "WHERE domain = :domain AND user_subject = :user AND revoked_at IS NULL";
 
+    /**
+     * Mark the LIVE connection as needing re-authentication. Called when a refresh-token
+     * exchange fails ({@code invalid_grant}) so the UI can prompt a reconnect.
+     *
+     * @param domain the brand
+     * @param user   the Casdoor subject of the owner
+     * @return a {@code Mono} emitting rows-updated
+     */
     @Modifying
     @Query(MARK_REAUTH)
     Mono<Long> markReauthRequired(@Param("domain") String domain, @Param("user") String user);

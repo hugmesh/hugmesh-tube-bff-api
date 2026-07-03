@@ -42,11 +42,15 @@ public class R2dbcConvertersConfig {
         return R2dbcCustomConversions.of(dialect, converters);
     }
 
+    /** Reading converter: {@code OffsetDateTime} (returned by the Postgres driver for
+     *  {@code timestamptz} columns) -> {@code Instant}. */
     @ReadingConverter
     static class OffsetDateTimeToInstantConverter implements Converter<OffsetDateTime, Instant> {
         @Override public Instant convert(OffsetDateTime source) { return source.toInstant(); }
     }
 
+    /** Reading converter: {@code LocalDateTime} (returned by H2 for {@code timestamp}
+     *  columns in slice tests) -> {@code Instant} at UTC. */
     @ReadingConverter
     static class LocalDateTimeToInstantConverter implements Converter<LocalDateTime, Instant> {
         @Override public Instant convert(LocalDateTime source) { return source.toInstant(ZoneOffset.UTC); }

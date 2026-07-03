@@ -1,6 +1,8 @@
 package systems.snapdragon.tubebff.media;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -127,6 +129,13 @@ public class TubeMediaController {
             + "Default-deny use (TubeAccessGuard) enforced first. "
             + "Path must start with /<domain>/<subject>/. Returns signed URL + expiresAt. "
             + "403 if no use grant / banned; 403 if path owner != jwt.subject; 400 if path is malformed.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Signed media URL and its expiry"),
+        @ApiResponse(responseCode = "400", description = "Path fails allowlist validation (possible traversal attempt)"),
+        @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
+        @ApiResponse(responseCode = "403", description = "No tube_access use grant, active ban, or path owner != caller"),
+        @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
     @PreAuthorize(AUTHENTICATED)
     @GetMapping("/sign")
     public Mono<ResponseEntity<TubeMediaDto.SignedUrl>> sign(

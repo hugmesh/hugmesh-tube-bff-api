@@ -9,8 +9,8 @@ import systems.snapdragon.commons.tenancy.DomainScope;
 import java.time.Instant;
 
 /**
- * Reactive (R2DBC) store for {@code tube_access} — the use grant/timeout/ban OVERLAY's
- * desired-state table (schema in Liquibase {@code db/changelog/004-tube-access.xml}).
+ * Reactive (R2DBC) store for the {@code tube_access} desired-state overlay — the use
+ * grant / timeout / ban table.
  *
  * <p>Refactored (2026-06-18 data-access standard) from hand-written
  * {@code DatabaseClient} raw SQL to delegate to {@link TubeAccessR2dbcRepository}, the
@@ -22,10 +22,17 @@ import java.time.Instant;
  * ({@code (gen_random_uuid())::text DEFAULT}) surfaced via {@code RETURNING id} — see
  * {@link #insertActive}.
  *
- * <p>The READS are DOMAIN-scoped via {@link DomainScope}: a scoped admin only ever
- * resolves rows in THEIR brand; a {@code null}/blank domain is the SUPERADMIN
- * cross-domain bypass (no predicate) — dispatched here onto the un-pinned vs
- * {@code ...AndDomain...} derived finder pair.
+ * <h2>Domain-scope dispatch</h2>
+ *
+ * <p>Reads are DOMAIN-scoped via {@link DomainScope}: a scoped admin only ever resolves
+ * rows in their own brand; a {@code null} or blank domain is the SUPERADMIN cross-domain
+ * bypass (no predicate). This class dispatches onto the un-pinned vs
+ * {@code ...AndDomain...} derived finder pair based on
+ * {@code DomainScope.isUnscoped(domain)}.
+ *
+ * @see TubeAccessR2dbcRepository
+ * @see TubeAccess
+ * @see TubeAccessService
  */
 @Repository
 public class TubeAccessRepository {
@@ -59,10 +66,12 @@ public class TubeAccessRepository {
     }
 
     /**
-     * Compare-and-swap {@code active -> revoked} for one row id, stamping
-     * {@code revoked_at}, guarded on the current state so only ONE writer wins (returns
-     * the rows-updated count: 1 = this caller won, 0 = already revoked). The row is never
-     * deleted.
+     * CAS {@code active -> revoked} for one row by id, stamping {@code revoked_at = now()}.
+     * Exactly one concurrent writer wins (rows-updated = 1); the others see 0. The row is
+     * never hard-deleted.
+     *
+     * @param id the {@code tube_access} row id to revoke
+     * @return a {@code Mono} emitting the rows-updated count (1 = won; 0 = already revoked)
      */
     public Mono<Long> revoke(String id) {
         return repo.revokeIfActive(id);
@@ -70,8 +79,16 @@ public class TubeAccessRepository {
 
     // ── reads (domain-scoped) ──────────────────────────────────────────
 
-    /** The active override of a given type for a (user) VISIBLE to the given tenant
-     *  scope. Brand-scoped, or un-pinned for the SUPERADMIN ({@code null} domain) bypass. */
+    /**
+     * The most-recent active override of a specific type for a user, visible to the given
+     * tenant scope. Brand-scoped for a scoped admin; un-pinned (no domain predicate) for the
+     * SUPERADMIN ({@code null}/blank domain) bypass.
+     *
+     * @param userSubject the Casdoor subject of the target user
+     * @param accessType  {@link TubeAccess#TYPE_USE} or {@link TubeAccess#TYPE_BANNED}
+     * @param domain      the brand to scope to; {@code null}/blank = SUPERADMIN bypass
+     * @return a {@code Mono} emitting the row, or empty if none is active
+     */
     public Mono<TubeAccess> findActive(String userSubject, String accessType, String domain) {
         return DomainScope.isUnscoped(domain)
                 ? repo.findFirstByUserSubjectAndAccessTypeAndStateOrderByCreatedAtDescIdAsc(
@@ -80,7 +97,14 @@ public class TubeAccessRepository {
                         userSubject, accessType, TubeAccess.STATE_ACTIVE, domain);
     }
 
-    /** Every ACTIVE override for a principal WITHIN a brand — the enforcement working set. */
+    /**
+     * Every ACTIVE override for a principal within a brand — the enforcement working set
+     * consumed by {@link TubeAccessGuard#assertCanUse}.
+     *
+     * @param userSubject the Casdoor subject of the principal being checked
+     * @param domain      the brand; {@code null}/blank = SUPERADMIN bypass (all brands)
+     * @return a {@code Flux} of active {@link TubeAccess} rows for this principal + brand
+     */
     public Flux<TubeAccess> activeFor(String userSubject, String domain) {
         return DomainScope.isUnscoped(domain)
                 ? repo.findByUserSubjectAndStateOrderByAccessTypeAscCreatedAtDesc(
@@ -89,7 +113,13 @@ public class TubeAccessRepository {
                         userSubject, TubeAccess.STATE_ACTIVE, domain);
     }
 
-    /** All ACTIVE overrides VISIBLE to the given tenant scope — the MANAGE read surface. */
+    /**
+     * All ACTIVE overrides visible to the given tenant scope — the MANAGE read surface
+     * exposed by {@code GET /superadmin/access}.
+     *
+     * @param domain the brand to scope to; {@code null}/blank = SUPERADMIN (all brands)
+     * @return a {@code Flux} of active rows ordered by domain, user_subject, access_type
+     */
     public Flux<TubeAccess> listActive(String domain) {
         return DomainScope.isUnscoped(domain)
                 ? repo.findByStateOrderByDomainAscUserSubjectAscAccessTypeAsc(TubeAccess.STATE_ACTIVE)
@@ -97,7 +127,15 @@ public class TubeAccessRepository {
                         TubeAccess.STATE_ACTIVE, domain);
     }
 
-    /** The full history (active + revoked) for a principal WITHIN a brand — the audit read. */
+    /**
+     * The full history (active + revoked) for a principal within a brand — the audit read
+     * exposed by {@code GET /superadmin/access/{subject}/history}. Revoked rows are never
+     * deleted, so this stream is the complete grant/ban audit log.
+     *
+     * @param userSubject the Casdoor subject whose history to retrieve
+     * @param domain      the brand to scope to; {@code null}/blank = SUPERADMIN (all brands)
+     * @return a {@code Flux} ordered by created_at DESC, id ASC
+     */
     public Flux<TubeAccess> historyFor(String userSubject, String domain) {
         return DomainScope.isUnscoped(domain)
                 ? repo.findByUserSubjectOrderByCreatedAtDescIdAsc(userSubject)

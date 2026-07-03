@@ -34,8 +34,17 @@ public class PersonalOwner {
         this.registry = registry;
     }
 
-    /** The owner key for this principal, or a 403 {@link ApiException} (Mono-friendly via
-     *  the caller) when the subject/domain can't be resolved. */
+    /**
+     * Resolve the {@code (subject, domain)} key for this principal. A missing JWT subject,
+     * an unauthenticated principal, or an unresolvable brand all throw a 403
+     * {@link ApiException} (deliberately synchronous — callers wrap in
+     * {@code Mono.fromCallable()} so the error surfaces as a failed {@code Mono}).
+     *
+     * @param auth the authenticated principal
+     * @return the resolved {@link Owner} with a non-null, non-blank subject and domain
+     * @throws ApiException (403) when the principal has no JWT, no subject, or an
+     *         unresolvable brand — fail-closed, never defaults to a bypass
+     */
     public Owner resolve(Authentication auth) {
         if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) {
             throw ApiException.forbidden("a Google connection requires an authenticated user");

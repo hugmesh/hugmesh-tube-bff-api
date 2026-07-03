@@ -17,20 +17,23 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Production {@link GoogleApiClient} over a reactive {@link WebClient}. Talks to:
+ * Production {@link GoogleApiClient} backed by a reactive {@link WebClient}. Calls:
  * <ul>
- *   <li>{@code https://oauth2.googleapis.com/token} — the authorization-code exchange +
- *       the refresh-token grant;</li>
- *   <li>{@code https://www.googleapis.com/youtube/v3/subscriptions?mine=true} — the
- *       subscribed-channels listing;</li>
- *   <li>{@code https://oauth2.googleapis.com/revoke} — token revocation (disconnect).</li>
+ *   <li>{@code https://oauth2.googleapis.com/token} — authorization-code exchange and the
+ *       refresh-token grant;</li>
+ *   <li>{@code https://www.googleapis.com/youtube/v3/subscriptions?mine=true&part=snippet}
+ *       — subscribed-channel listing (paged, max 50 results);</li>
+ *   <li>{@code https://oauth2.googleapis.com/revoke} — best-effort token revocation.</li>
  * </ul>
  *
- * <p>The dedicated Google OAuth Web client id/secret + redirect URI come from
- * {@link TubeGoogleProperties} (ESO {@code secret/<brand>/tube-google}). A non-2xx from
- * the token endpoint (e.g. an {@code invalid_grant} when the refresh token was revoked)
- * surfaces as an error Mono so {@code SubscriptionsSyncService} can mark
- * {@code reauth_required} and stop.
+ * <p>The dedicated Google OAuth Web client id/secret and redirect URI come from
+ * {@link TubeGoogleProperties} (Vault {@code secret/<brand>/tube-google} → ESO). A
+ * non-2xx from the token endpoint (e.g. {@code invalid_grant} when the refresh token was
+ * revoked externally) surfaces as a failed {@code Mono} so {@link SubscriptionsSyncService}
+ * marks {@code reauth_required} and stops without retrying.
+ *
+ * @see GoogleApiClient
+ * @see TubeGoogleProperties
  */
 @Component
 public class DefaultGoogleApiClient implements GoogleApiClient {
@@ -48,6 +51,13 @@ public class DefaultGoogleApiClient implements GoogleApiClient {
         this.props = props;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Posts to {@value #TOKEN_URI} with {@code grant_type=authorization_code}. A
+     * non-2xx response (e.g. {@code invalid_grant}) is mapped to a {@code badGateway}
+     * {@link systems.snapdragon.commons.web.ApiException}.
+     */
     @Override
     public Mono<TokenResponse> exchangeCode(String code) {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
@@ -66,6 +76,13 @@ public class DefaultGoogleApiClient implements GoogleApiClient {
                 .map(this::toTokenResponse);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Posts to {@value #TOKEN_URI} with {@code grant_type=refresh_token}. A 4xx response
+     * (e.g. {@code invalid_grant} — the user revoked access) surfaces as a failed
+     * {@code Mono} so the caller can flag {@code reauth_required}.
+     */
     @Override
     public Mono<String> refreshAccessToken(String refreshToken) {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
@@ -85,6 +102,13 @@ public class DefaultGoogleApiClient implements GoogleApiClient {
                 .map(m -> str(m, "access_token"));
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>GETs {@value #SUBSCRIPTIONS_URI} with {@code part=snippet&mine=true&maxResults=50}.
+     * Appends {@code pageToken} when non-blank. The access token is passed as a
+     * {@code Bearer} authorization header.
+     */
     @Override
     @SuppressWarnings("unchecked")
     public Mono<SubscriptionsPage> listSubscriptions(String accessToken, String pageToken) {

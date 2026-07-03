@@ -11,23 +11,34 @@ import systems.snapdragon.commons.security.DomainRegistry;
 import systems.snapdragon.tubebff.security.PrincipalDomain;
 
 /**
- * The download work-queue orchestration — the API the {@link TubeDownloadController} (user
- * surface) and the internal worker endpoint call.
+ * Download work-queue orchestration — the API {@link TubeDownloadController} (user surface)
+ * and {@link TubeDownloadWorkerController} (internal worker) delegate to.
  *
- * <p><b>SECURITY-CRITICAL OWNER + DOMAIN DERIVATION.</b> For every USER-facing operation
- * the owner ({@code user_subject}) AND the brand ({@code domain}) are derived SERVER-SIDE
- * from the validated JWT — owner from {@code jwt.getSubject()}, domain from the validated
- * issuer via {@link PrincipalDomain}. NEITHER is ever read from a request field, so user A
- * cannot list or enqueue jobs for user B, and cannot reach another brand's queue. This is
- * the {@code PersonalOwner} stance: FAIL-CLOSED — a principal with no usable JWT subject is
- * rejected, and (unlike the access-governance plane) there is NO SUPERADMIN null bypass on
- * the personal queue: a SUPERADMIN acts as themselves here (their own subject + domain),
- * never as another user.
+ * <h2>Security-critical owner + domain derivation</h2>
  *
- * <p>The {@link #claim} / {@link #report} operations are the INTERNAL worker seam (the
- * future yt-dlp CronJob polls them). They take a {@code workerId} (NOT a user JWT) and are
- * mounted under a worker/service-principal-gated path — they MUST NOT be reachable by a
- * plain {@code ROLE_TUBE} user.
+ * <p>For every USER-facing operation the owner ({@code user_subject}) AND the brand
+ * ({@code domain}) are derived SERVER-SIDE from the validated JWT — owner from
+ * {@code jwt.getSubject()}, domain from the validated issuer via {@link PrincipalDomain}.
+ * NEITHER is ever read from a request field: user A cannot list or enqueue jobs for user B,
+ * and cannot reach another brand's queue. FAIL-CLOSED: a principal with no usable JWT
+ * subject is rejected. Unlike the access-governance plane there is NO SUPERADMIN null bypass
+ * on the personal queue — a SUPERADMIN acts as themselves (own subject + domain, defaulted
+ * to {@code default}), never as another user.
+ *
+ * <h2>Caller-role access matrix</h2>
+ *
+ * <pre>
+ *   Caller              │ Operations allowed
+ *   ────────────────────┼─────────────────────────────────────────────────────
+ *   ROLE_TUBE (granted) │ listForOwner, enqueueFromSubscriptions (own jobs only)
+ *   ROLE_TUBE_WORKER    │ claim, report (machine operation — no user JWT)
+ *   ROLE_ADMIN/SUPER    │ setBudget via TubeStorageBudgetController (separate)
+ * </pre>
+ *
+ * @see TubeDownloadController
+ * @see TubeDownloadWorkerController
+ * @see DownloadJobRepository
+ * @see StorageUsageService
  */
 @Service
 public class DownloadJobService {
@@ -50,9 +61,13 @@ public class DownloadJobService {
     // ── USER surface (owner + domain server-derived) ───────────────────────────
 
     /**
-     * List the calling user's OWN download jobs in their OWN brand. Owner + domain are
-     * server-derived from the JWT — a user can NEVER list another user's or another brand's
+     * List the calling user's own download jobs in their own brand. Owner + domain are
+     * server-derived from the JWT — a user can never list another user's or another brand's
      * jobs.
+     *
+     * @param auth the authenticated user's JWT; subject + domain derived server-side
+     * @return a {@code Flux} of the caller's {@link DownloadJob} rows, newest first
+     * @throws IllegalStateException if the principal has no usable JWT subject (fail-closed)
      */
     public Flux<DownloadJob> listForOwner(Authentication auth) {
         Owner o = owner(auth);
@@ -61,10 +76,15 @@ public class DownloadJobService {
 
     /**
      * Enqueue download jobs from the calling user's subscriptions. For each subscribed
-     * channel with a known latest video, enqueue a job (DEDUPED on video_id — re-running is
-     * idempotent). PAUSE-ON-FULL: when the user's storage budget is already full, the job
-     * is recorded as {@code skipped} instead of {@code queued} (never a throw-loop). Owner +
-     * domain are server-derived from the JWT.
+     * channel with a known latest video id, enqueues a job deduped on
+     * {@code (domain, user_subject, video_id)} — re-running is idempotent. PAUSE-ON-FULL:
+     * when the user's storage budget is already exhausted the job is recorded as
+     * {@code skipped} instead of {@code queued} (never a throw-loop). Owner + domain are
+     * server-derived from the JWT.
+     *
+     * @param auth the authenticated user's JWT; subject + domain derived server-side
+     * @return a {@code Flux} of the created or pre-existing {@link DownloadJob} rows
+     * @throws IllegalStateException if the principal has no usable JWT subject (fail-closed)
      */
     public Flux<DownloadJob> enqueueFromSubscriptions(Authentication auth) {
         Owner o = owner(auth);
@@ -87,11 +107,16 @@ public class DownloadJobService {
     // ── INTERNAL worker seam (workerId, NOT a user JWT) ────────────────────────
 
     /**
-     * Atomically claim up to {@code n} queued jobs for {@code workerId} (the future
-     * CronJob worker). PAUSE-ON-FULL is also honoured here: a claimed job whose OWNER is
-     * over budget is immediately re-marked {@code skipped} (the worker should not download
-     * it) — so a full user never has work actually downloaded even if a stale job sits
-     * queued. INTERNAL: gated to a worker/service principal at the controller, NOT a user.
+     * Atomically claim up to {@code n} queued jobs for {@code workerId}. PAUSE-ON-FULL is
+     * also honoured at claim time: a claimed job whose owner is over budget is immediately
+     * re-marked {@code failed} (budget-full sentinel) and excluded from the returned batch,
+     * so a full user never has work downloaded even if a stale job sits queued. INTERNAL:
+     * gated to a worker/service principal; NOT reachable by a plain {@code ROLE_TUBE} user.
+     *
+     * @param workerId the worker identity string (stamped as {@code claimed_by})
+     * @param n        the maximum number of jobs to claim; 0 or negative returns empty
+     * @return a {@code Flux} of claimed {@link DownloadJob} rows that the worker should
+     *         download (jobs whose owners are over budget are excluded)
      */
     public Flux<DownloadJob> claim(String workerId, int n) {
         return jobs.claimBatch(workerId, n)
@@ -108,10 +133,25 @@ public class DownloadJobService {
     }
 
     /**
-     * Report a worker's result for a job. {@code done} stamps bytes + content_path AND adds
-     * the bytes to the owner's storage usage (the only place used_bytes grows); {@code
-     * failed} stamps last_error; {@code downloading} marks progress. Guarded on the worker
-     * owning the claim in the repo. INTERNAL: worker/service-principal-gated.
+     * Report a worker's result for a previously claimed job. Routes on {@code result}:
+     * <ul>
+     *   <li>{@code done} — stamps bytes + content_path AND adds the bytes to the owner's
+     *       storage usage (the only place {@code used_bytes} grows); returns the updated
+     *       row.</li>
+     *   <li>{@code failed} — stamps {@code last_error}; returns the updated row.</li>
+     *   <li>{@code downloading} — marks progress; returns the updated row.</li>
+     * </ul>
+     * Each CAS is guarded on the worker owning the claim in the repo. INTERNAL:
+     * worker/service-principal-gated.
+     *
+     * @param jobId       the job to update
+     * @param workerId    the worker that holds the claim (verified in the CAS guard)
+     * @param result      one of {@code done}, {@code failed}, or {@code downloading}
+     * @param bytes       the downloaded byte count (only meaningful for {@code done})
+     * @param contentPath the content-PVC path (only meaningful for {@code done})
+     * @param error       the error message (only meaningful for {@code failed})
+     * @return a {@code Mono} emitting the updated {@link DownloadJob}
+     * @throws IllegalArgumentException if {@code result} is not one of the three known values
      */
     public Mono<DownloadJob> report(String jobId, String workerId, String result,
                                     long bytes, String contentPath, String error) {

@@ -10,12 +10,16 @@ import reactor.core.publisher.Mono;
 import java.time.Instant;
 
 /**
- * Spring Data R2DBC repository for {@code tube_subscription} — a connected user's mirrored
- * YouTube channels (the Google-sync view: thumbnail + synced_at; schema in Liquibase
- * {@code db/changelog/006-tube-subscription.xml}). Owner-scoped, single-domain (no
- * SUPERADMIN bypass). MATCHES the federation exemplar: a derived owner+domain finder + one
- * constant-{@code @Query} for the in-place sync UPDATE (a partial update derivation cannot
- * express).
+ * Spring Data R2DBC repository for the {@code tube_subscription} table — the Google-sync
+ * view of a connected user's YouTube channels (thumbnail + synced_at).
+ *
+ * <p>Schema: Liquibase {@code db/changelog/006-tube-subscription.xml}. Owner-scoped,
+ * single-domain (no SUPERADMIN bypass). Follows the federation exemplar: a derived
+ * owner+domain finder plus one constant-{@code @Query} for the in-place sync UPDATE that
+ * a partial-update derivation cannot express.
+ *
+ * @see TubeSubscriptionRepository
+ * @see TubeSubscription
  */
 public interface TubeSubscriptionR2dbcRepository extends R2dbcRepository<TubeSubscription, String> {
 
@@ -24,6 +28,18 @@ public interface TubeSubscriptionR2dbcRepository extends R2dbcRepository<TubeSub
             + "thumbnail_url = :thumb, synced_at = now() "
             + "WHERE domain = :domain AND user_subject = :user AND channel_id = :chan";
 
+    /**
+     * In-place refresh of a subscription row's title, thumbnail, and {@code synced_at}
+     * timestamp. Returns 0 when the (domain, user, channel) row does not yet exist —
+     * the caller ({@link TubeSubscriptionRepository#upsert}) inserts on a 0 return.
+     *
+     * @param domain the brand
+     * @param user   the Casdoor subject of the owner
+     * @param chan   the YouTube channel id
+     * @param title  the current channel title
+     * @param thumb  the channel thumbnail URL
+     * @return a {@code Mono} emitting rows-updated (1 on update, 0 when row absent)
+     */
     @Modifying
     @Query(SYNC_UPDATE)
     Mono<Long> syncUpdate(@Param("domain") String domain, @Param("user") String user,

@@ -4,45 +4,76 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * Tube BFF — the access GOVERNANCE plane of the LocalTube video optional service
- * (x86 + GPU-dependent, ships DEFAULT-OFF). It owns the {@code tube_access}
- * desired-state overlay (PR2) — the per-principal may-use grant/timeout/ban records
- * that gate whether a (domain-controlled) user may actually USE the tube service on
- * top of the {@code ROLE_TUBE} base role — and (PR3–PR5) the Google-connect /
- * subscriptions-sync, the yt-dlp downloader work queue, and the owner-private media
- * serving.
+ * Tube BFF — the access GOVERNANCE and media-access plane of the LocalTube video
+ * optional service (x86 + GPU-dependent, ships DEFAULT-OFF). Serves the gateway path
+ * {@code /bff/tube/**} as a reactive Spring WebFlux resource server; validated
+ * Casdoor JWTs are the authentication layer.
  *
- * <p>This BFF is NOT the media plane — the downloaded content lives on a per-domain
- * content PVC served range/HLS through a SEPARATE be-gateway route:
+ * <h2>Architecture</h2>
  *
- * <pre>browser -> fe-gateway /bff/tube/** -> THIS BFF -> tube_access Postgres overlay
- * browser -> be-gateway /tube/media/** (range/HLS) -> tube-media sidecar (per-domain content PVC, PR5)</pre>
- *
- * <p>This BFF wraps the governance store per ROLE + ACTION (defence in depth on top of
- * the gateway route-access ROLE_TUBE floor):
- *
+ * <p>This BFF owns:
  * <ul>
- *   <li>USE — DEFAULT-DENY, GRANT-ONLY: a principal may use the service iff an active
- *       non-expired {@code tube_access} use grant exists AND no active ban; the base
- *       {@code ROLE_TUBE} is the route/connect floor but does NOT by itself confer use.
- *       Enforced programmatically by {@code TubeAccessGuard} (a static SpEL cannot
- *       consult the DB).</li>
- *   <li>GOVERN (grant/timeout/ban/restore) — {@code TUBE_GOVERN = hasRole('ADMIN') or
- *       hasRole('SUPERADMIN')} — an ADMIN decides which of their domain's users may
- *       use the tube service;</li>
- *   <li>MANAGE — {@code TUBE_MANAGE = hasRole('SUPERADMIN')} — list-all + history
- *       (the service enable per-domain + GPU-node check + the wider quota/retention/
- *       cadence admin surface arrive in PR4/PR7/PR8).</li>
+ *   <li><b>PR2</b> — {@code tube_access} desired-state overlay: per-principal may-use
+ *       grant/timeout/ban records that gate whether a domain-controlled user may use the
+ *       tube service above the {@code ROLE_TUBE} base role.</li>
+ *   <li><b>PR3</b> — Google (youtube.readonly) OAuth connect / subscriptions sync:
+ *       the dedicated Web client OAuth flow + AES-256-GCM refresh-token at-rest encryption
+ *       + idempotent channel upsert.</li>
+ *   <li><b>PR4</b> — yt-dlp download work queue: the {@code tube_download_job} table,
+ *       the user enqueue surface, and the internal worker claim/report endpoints.</li>
+ *   <li><b>PR5</b> — short-TTL HMAC-signed media URLs for the tube-media Nginx sidecar
+ *       that serves the per-domain content PVC.</li>
  * </ul>
  *
- * <p>Every surface is DOMAIN-SCOPED (multi-brand): the {@code domain} is derived
- * SERVER-SIDE from the validated token issuer, so a scoped ADMIN of brand X governs
- * ONLY brand X's users; SUPERADMIN is the cross-domain bypass (and is exempt from a
- * ban). The granting admin is tracked from the JWT subject ({@code granted_by_subject});
- * a caller can never act under another admin. The Google-connect / subscriptions /
- * download / owner-private viewing tables + workers + the {@code snapdragon-tube-ui}
- * remote arrive in later PRs (PR3–PR6) — this PR is the BFF skeleton + the use access
- * overlay + the default-deny guard only.
+ * <p>This BFF is NOT the media plane — downloaded content lives on a per-domain content
+ * PVC served range/HLS through a SEPARATE be-gateway route:
+ *
+ * <pre>
+ *   browser → fe-gateway /bff/tube/**       → THIS BFF → tube_access / subscriptions / jobs
+ *   browser → be-gateway /tube/content/**   → tube-media Nginx sidecar (PVC, PR5)
+ * </pre>
+ *
+ * <h2>Caller-role access matrix</h2>
+ *
+ * <pre>
+ *   Caller              │ Path prefix                   │ What they may do
+ *   ────────────────────┼───────────────────────────────┼──────────────────────────────────────
+ *   ROLE_TUBE (user)    │ /bff/tube/**                  │ use-gate enforced first (active grant
+ *                       │                               │ AND no active ban); own subscriptions,
+ *                       │                               │ own download queue, media sign
+ *   ROLE_TUBE (no grant)│ /bff/tube/**                  │ 403 from TubeAccessGuard (default-deny)
+ *   ROLE_ADMIN          │ /bff/tube/admin/**            │ TUBE_GOVERN: grant/timeout/ban/restore +
+ *                       │                               │ set storage budget (own brand only)
+ *   ROLE_SUPERADMIN     │ /bff/tube/superadmin/**       │ TUBE_MANAGE: list-all + history;
+ *                       │                               │ also reaches all admin gates via hierarchy
+ *   ROLE_TUBE_WORKER    │ /bff/tube/internal/**         │ claim/report download jobs (machine only;
+ *                       │                               │ deliberately OUTSIDE the human hierarchy)
+ *   (unauthenticated)   │ /actuator/health, /info       │ k8s probes, no token required
+ * </pre>
+ *
+ * <h2>Security axioms</h2>
+ *
+ * <ul>
+ *   <li><b>DEFAULT-DENY use</b>: bare {@code ROLE_TUBE} is the route/connect floor only —
+ *       it does NOT confer use. An active {@code tube_access} use grant (or the SUPERADMIN
+ *       infra exemption) is required. Enforced programmatically by
+ *       {@link systems.snapdragon.tubebff.access.TubeAccessGuard} (a static SpEL
+ *       cannot consult the DB for a per-principal grant or ban).</li>
+ *   <li><b>Domain-scoped</b>: every table has a {@code domain} column stamped server-side
+ *       from the validated JWT issuer. A scoped ADMIN of brand X governs only brand X.
+ *       SUPERADMIN is the cross-domain bypass (and is exempt from a ban).</li>
+ *   <li><b>Audit trail</b>: {@code tube_access} rows are never hard-deleted — revoked rows
+ *       are retained as the audit log.</li>
+ *   <li><b>Secrets at rest</b>: the Google refresh token is stored ONLY as AES-256-GCM
+ *       ciphertext ({@link systems.snapdragon.tubebff.google.TokenCipher}).</li>
+ * </ul>
+ *
+ * @see systems.snapdragon.tubebff.access.TubeAccessGuard
+ * @see systems.snapdragon.tubebff.access.TubeAccessController
+ * @see systems.snapdragon.tubebff.google.GoogleConnectController
+ * @see systems.snapdragon.tubebff.download.TubeDownloadController
+ * @see systems.snapdragon.tubebff.media.TubeMediaController
+ * @see systems.snapdragon.tubebff.config.SecurityConfig
  */
 @SpringBootApplication
 @SuppressWarnings("checkstyle:HideUtilityClassConstructor")

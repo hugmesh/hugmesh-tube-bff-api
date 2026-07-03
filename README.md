@@ -48,9 +48,9 @@ tube-ui remote and the wider admin quota/retention surface remain 🔭 external 
 
 ## What this BFF owns
 
-This service is the **control plane** for the tube service — it owns the may-use
-governance overlay PLUS the user-facing connect/list/queue/sign surfaces. It does NOT
-serve media bytes and does NOT run yt-dlp. Concretely, on `main` today this BFF owns:
+This service is the **control plane** for the tube service: it owns the access-governance
+overlay and all user-facing connect, list, queue, and signing surfaces. It does NOT serve
+media bytes and does NOT run yt-dlp. Concretely, on `main` today this BFF owns:
 
 - ✅ the `tube_access` **governance overlay** — the per-principal may-use grant/timeout/ban
   table an ADMIN curates on top of the base `ROLE_TUBE` role;
@@ -60,18 +60,19 @@ serve media bytes and does NOT run yt-dlp. Concretely, on `main` today this BFF 
   queued→claimed→downloading→done/failed/skipped state machine, dedup, and
   claim/report endpoints;
 - ✅ the **media-URL signing** surface — short-TTL HMAC-signed URLs that authorise a
-  byte fetch (owner two-wall enforced here).
+  byte fetch. The owner two-wall (the check that the path's `sub` and domain match the
+  caller's JWT claims) is enforced here before any URL is issued.
 
-The media **bytes** are still served by a separate per-domain tube-media Nginx sidecar
-(🔭 not in this repo) over a `be-gateway /tube/content/**` route, and the yt-dlp runner
-image + polling CronJob that drain the work-queue are still external (🔭 not in this
-repo) — see [Roadmap](#roadmap--not-yet-in-this-repo). What lives HERE are the queue +
-claim/report + signed-URL **control** surfaces, not the byte plane or the downloader.
+The media **bytes** are served by a separate per-domain tube-media Nginx sidecar
+(🔭 not in this repo) behind a `be-gateway /tube/content/**` route. The yt-dlp runner
+image and the polling CronJob that drain the work-queue are also external (🔭 not in this
+repo) — see [Roadmap](#roadmap--not-yet-in-this-repo). What lives HERE are the queue,
+claim/report, and signed-URL **control** surfaces — not the byte plane or the downloader.
 
 ### Request flows
 
-The browser→governance/control path (everything `/bff/tube/**` is THIS BFF, behind the
-`fe-gateway`):
+The browser-to-governance/control path (all routes under `/bff/tube/**` are handled by this
+BFF, reached through the `fe-gateway`):
 
 ```mermaid
 flowchart LR
@@ -118,8 +119,9 @@ flowchart LR
 
 ## API surface (route groups)
 
-All routes are mounted under `/bff/tube` (reached only through the `fe-gateway`; the base
-`ROLE_TUBE` gateway route-access is the floor before any of these handlers run).
+All routes are mounted under `/bff/tube` and are only reachable through the `fe-gateway`.
+The gateway enforces `ROLE_TUBE` route-access as a floor check before any handler in this
+BFF runs.
 
 **Access governance** — `access/TubeAccessController`
 - `POST /bff/tube/admin/access/grant` · `.../timeout` · `.../ban` (ADMIN | SUPERADMIN, own-brand)
@@ -143,29 +145,49 @@ All routes are mounted under `/bff/tube` (reached only through the `fe-gateway`;
 
 **Downloads + budgets** — `download/TubeDownloadController`, `download/TubeDownloadWorkerController`, `download/TubeStorageBudgetController`
 - `GET /bff/tube/downloads` · `POST /bff/tube/downloads` — authenticated (owner-scoped enqueue/list)
-- `POST /bff/tube/internal/download-jobs/{claim,report}` — **`ROLE_TUBE_WORKER` only**
-  (a service/mTLS principal for the future yt-dlp CronJob; deliberately OUTSIDE the
-  human role hierarchy — no USER/MOD/ADMIN/SUPERADMIN reaches it)
+- `POST /bff/tube/internal/download-jobs/{claim,report}` — **`ROLE_TUBE_WORKER` only**.
+  This role belongs to a service/mTLS principal (the future yt-dlp CronJob). It is
+  deliberately outside the human role hierarchy: no USER, MOD, ADMIN, or SUPERADMIN can
+  reach these endpoints.
 - `POST /bff/tube/admin/storage-budget` — set a user's storage budget cap (ADMIN | SUPERADMIN, own-brand)
 
 ## The `tube_access` overlay + `TubeAccessGuard`
 
-The use grant/timeout/ban overlay was cloned EXACTLY from the owncast-bff `owncast_grant`
-(004) overlay (which itself cloned the wiki-bff `wiki_access`), swapping `broadcast` → `use`:
+The use grant/timeout/ban overlay was cloned directly from the owncast-bff `owncast_grant`
+(004) overlay (which itself cloned the wiki-bff `wiki_access`), with `broadcast` renamed
+to `use`:
 
-- **`tube_access`** (Liquibase `004-tube-access.xml`) — the desired-state table:
-  `access_type ∈ {use, banned}`, `state ∈ {active, revoked}` (never deleted = audit),
-  `expires_at` NULL=permanent / future=timeout-auto-restore, partial-unique on active
-  `(domain, user_subject, access_type)`, domain-scoped.
-- **`TubeAccessGuard.assertCanUse`** — the LOAD-BEARING, **DEFAULT-DENY** enforcement:
-  SUPERADMIN short-circuits ALLOW (exempt from ban); otherwise load the principal's
-  active non-expired `tube_access` rows for their brand; an active BAN denies even a
-  grantee (precedence **ban > grant**); else ALLOW iff an active `use` grant exists;
-  else **403**. The base `ROLE_TUBE` is the gateway route-access floor + the
-  connect/view-own surface — it does NOT by itself confer use; an admin's `use` grant
-  is the only thing that lifts a user above the default-deny floor.
+- **`tube_access`** (Liquibase `004-tube-access.xml`) — the desired-state table.
+  Key invariants: `access_type ∈ {use, banned}`; `state ∈ {active, revoked}` (rows are
+  never hard-deleted — audit trail preserved); `expires_at` is NULL for permanent grants
+  or a future timestamp for timeout-auto-restore; a partial unique index enforces at most
+  one active row per `(domain, user_subject, access_type)`.
+- **`TubeAccessGuard.assertCanUse`** — the load-bearing **default-deny** enforcement gate.
+  See the decision diagram below for the full precedence chain. `ROLE_TUBE` alone (the
+  gateway route-access floor) does NOT confer the right to use the service; an admin's
+  explicit `use` grant is the only thing that lifts a user above the default-deny floor.
 - **`ROLE_TUBE`** — the base service role (sibling of `ROLE_OWNCAST` / `ROLE_WIKI` /
   `ROLE_FORUM`).
+
+```mermaid
+flowchart TB
+    start(["assertCanUse(principal)"])
+    isSA{"SUPERADMIN?"}
+    loadRows["load active non-expired\ntube_access rows\nfor (domain, user_subject)"]
+    hasBan{"active BAN row?"}
+    hasGrant{"active USE grant row?"}
+    allow(["✅ ALLOW"])
+    deny(["❌ 403 Forbidden"])
+
+    start --> isSA
+    isSA -->|"yes (ban-exempt)"| allow
+    isSA -->|"no"| loadRows
+    loadRows --> hasBan
+    hasBan -->|"yes (ban > grant)"| deny
+    hasBan -->|"no"| hasGrant
+    hasGrant -->|"yes"| allow
+    hasGrant -->|"no (default-deny)"| deny
+```
 
 ## Role model
 
@@ -185,9 +207,10 @@ The use grant/timeout/ban overlay was cloned EXACTLY from the owncast-bff `ownca
 ## Schema (Liquibase changelogs on `main`)
 
 Liquibase runs over a JDBC datasource (Liquibase has no R2DBC runner); all runtime data
-access goes through R2DBC. Numbering starts at 004 to match the `owncast_grant` /
-`wiki_access` (004) overlay this is cloned from (001–003 in wiki-bff are the wiki content
-store, which tube has no analogue of — use is grant-only). Mirrors the comment block in
+access uses R2DBC. Changelog numbering starts at 004 because this service is cloned from
+the `owncast_grant` / `wiki_access` overlay, which also starts at 004. Changelogs 001–003
+exist in wiki-bff for the wiki content store; tube has no equivalent content store — its
+schema is grant-and-queue-only. The list below mirrors the comment block in
 `db.changelog-master.xml`:
 
 - **004 `tube-access`** — the use grant/timeout/ban overlay.
@@ -211,19 +234,21 @@ store, which tube has no analogue of — use is grant-only). Mirrors the comment
 
 ## CI
 
-CI = GitLab (`.gitlab-ci.yml`). The GitHub repo is pull-mirrored into in-cluster GitLab
-(`mirror_trigger_builds=true`), so the pipeline runs on push / mirror-sync. Stages:
+CI = GitLab (`.gitlab-ci.yml`). The GitHub repo is pull-mirrored into the in-cluster GitLab
+(`mirror_trigger_builds=true`), so the pipeline runs on push and mirror-sync. Stages:
 
-- **`test:unit`** — `./mvnw -B -DskipITs test` (unit/slice tests; keeps a broken
-  overlay/guard from shipping an image).
-- **`build:image`** — builds + pushes the container image on the privileged x86 runner
-  (immutable SHA/tag + a moving branch tag). Images carry NO keys.
-- **`pentest`** — ✅ the continuous-OWASP stage per the platform pen-test standard:
-  `pentest:sca` (OWASP Dependency-Check SCA) + `pentest:dast` (authenticated ZAP DAST
-  baseline incl. nuclei probes), both `extends:` the centralized `.pentest-*` hidden jobs
-  in `snapdragon-generator`'s `tests/pentest/ci/pentest-stage.gitlab-ci.yml`. Currently
-  `allow_failure: true` (report-and-fix posture). `make pentest` runs the same
-  SCA + DAST self-scan locally.
+- **`test:unit`** — runs `./mvnw -B -DskipITs test` (unit and slice tests). A failure here
+  blocks image build, preventing a broken overlay or guard from shipping.
+- **`build:image`** — builds and pushes the container image on the privileged x86 runner.
+  Each image gets an immutable SHA tag and a moving branch tag. Images carry no embedded
+  keys.
+- **`pentest`** — ✅ the continuous-OWASP stage per the platform pen-test standard.
+  Contains two jobs: `pentest:sca` (OWASP Dependency-Check SCA) and `pentest:dast`
+  (authenticated ZAP DAST baseline including nuclei probes). Both jobs extend the
+  centralised `.pentest-*` hidden jobs from
+  `snapdragon-generator/tests/pentest/ci/pentest-stage.gitlab-ci.yml`. Currently
+  `allow_failure: true` (report-and-fix posture, not a hard gate). Run `make pentest` to
+  run the same SCA and DAST scan locally.
 
 > k6 load testing is part of the platform pen-test standard but is not wired into THIS
 > repo's pipeline yet (SCA + DAST baseline are).
@@ -245,11 +270,12 @@ not live A/V.
 
 ## Roadmap / not yet in this repo
 
-DEFAULT-OFF (ships dark), GPU-pinned (x86 + GPU). The following are 🔭 planned /
-🚧 in-flight and are NOT shipped in this repo — this BFF owns the control surfaces they
-plug into, but the components themselves live elsewhere:
+The tube service ships dark by default and is GPU-pinned (requires an x86 node with a
+GPU). The items below are 🔭 planned or 🚧 in-flight and are not shipped in this repo.
+This BFF owns the control surfaces they plug into, but the components themselves live
+elsewhere:
 
-- 🔭 **yt-dlp downloader runner image + generator-gated polling CronJob** that drains the
+- 🔭 **yt-dlp downloader runner image + generator-gated polling CronJob** — drains the
   `tube_download_job` work-queue via the `ROLE_TUBE_WORKER` claim/report endpoints. The
   queue + claim/report + storage budgets are ✅ shipped here; the runner/CronJob are a
   deferred follow-up.

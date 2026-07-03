@@ -1,6 +1,8 @@
 package systems.snapdragon.tubebff.access;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -20,9 +22,8 @@ import java.util.Map;
 
 /**
  * The use grant / timeout / ban OVERLAY surface — the write side of the
- * {@code tube_access} desired-state that {@link TubeAccessGuard} enforces
- * (DEFAULT-DENY) on the use path. CLONED in role model from the owncast-bff
- * {@code OwncastBroadcastController}.
+ * {@code tube_access} desired-state table that {@link TubeAccessGuard} enforces
+ * (DEFAULT-DENY) on the use path.
  *
  * <p><b>ROLE MODEL.</b> {@code ROLE_TUBE} is the base service role (sibling of
  * {@code ROLE_OWNCAST} / {@code ROLE_WIKI} / {@code ROLE_FORUM}) — the gateway
@@ -97,6 +98,13 @@ public class TubeAccessController {
             summary = "GRANT a USER permanent may-use access (an active tube_access "
             + "use override) — the way to lift a user above the default-deny use floor. "
             + "ADMIN/SUPERADMIN, own-brand. Idempotent if already active.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Grant created or already active"),
+        @ApiResponse(responseCode = "400", description = "Validation failure on request body"),
+        @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
+        @ApiResponse(responseCode = "403", description = "Caller lacks ROLE_ADMIN or ROLE_SUPERADMIN"),
+        @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
     @PreAuthorize(TUBE_GOVERN)
     @PostMapping("/admin/access/grant")
     public Mono<ResponseEntity<TubeAccessDto.Access>> grant(
@@ -120,6 +128,13 @@ public class TubeAccessController {
             summary = "TIMEOUT a USER from the tube service for a bounded window (an active "
             + "banned override with a future expires_at; auto-restores on expiry without "
             + "a write). ADMIN/SUPERADMIN, own-brand. Idempotent if already active.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Timeout override created"),
+        @ApiResponse(responseCode = "400", description = "Validation failure (ttlSeconds must be positive)"),
+        @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
+        @ApiResponse(responseCode = "403", description = "Caller lacks ROLE_ADMIN or ROLE_SUPERADMIN"),
+        @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
     @PreAuthorize(TUBE_GOVERN)
     @PostMapping("/admin/access/timeout")
     public Mono<ResponseEntity<TubeAccessDto.Access>> timeout(
@@ -141,6 +156,13 @@ public class TubeAccessController {
             summary = "BAN a USER from the tube service permanently (an active banned override, "
             + "expires_at NULL). Denies even an active grantee (ban>grant). Must be revoked "
             + "explicitly. ADMIN/SUPERADMIN, own-brand.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Ban override created"),
+        @ApiResponse(responseCode = "400", description = "Validation failure on request body"),
+        @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
+        @ApiResponse(responseCode = "403", description = "Caller lacks ROLE_ADMIN or ROLE_SUPERADMIN"),
+        @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
     @PreAuthorize(TUBE_GOVERN)
     @PostMapping("/admin/access/ban")
     public Mono<ResponseEntity<TubeAccessDto.Access>> ban(
@@ -166,10 +188,19 @@ public class TubeAccessController {
             + "(row retained = audit). accessType = use|banned: revoke 'banned' to restore use; "
             + "revoke 'use' to remove a grant. No-op if no active override exists. "
             + "ADMIN/SUPERADMIN, own-brand.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Override revoked (or no active override — no-op)"),
+        @ApiResponse(responseCode = "400", description = "accessType must be 'use' or 'banned'"),
+        @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
+        @ApiResponse(responseCode = "403", description = "Caller lacks ROLE_ADMIN or ROLE_SUPERADMIN"),
+        @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
     @PreAuthorize(TUBE_GOVERN)
     @DeleteMapping("/admin/access/{accessType}/{userSubject}")
     public Mono<ResponseEntity<Map<String, Object>>> revoke(
             @PathVariable String accessType, @PathVariable String userSubject, Authentication auth) {
+        // Reject any accessType that is not one of the two known values before touching
+        // the DB — a 400 here is preferable to an empty no-op for a typo.
         String type = switch (accessType) {
             case TubeAccess.TYPE_USE    -> TubeAccess.TYPE_USE;
             case TubeAccess.TYPE_BANNED -> TubeAccess.TYPE_BANNED;
@@ -196,6 +227,12 @@ public class TubeAccessController {
     @Operation(operationId = "listActiveUseAccess",
             summary = "List all ACTIVE tube_access overrides (scoped to the caller's "
             + "brand; SUPERADMIN sees all brands). SUPERADMIN only.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Active override list"),
+        @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
+        @ApiResponse(responseCode = "403", description = "Caller lacks ROLE_SUPERADMIN"),
+        @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
     @PreAuthorize(TUBE_MANAGE)
     @GetMapping("/superadmin/access")
     public Mono<TubeAccessDto.AccessList> listActive(Authentication auth) {
@@ -216,6 +253,12 @@ public class TubeAccessController {
             summary = "The full grant/timeout/ban HISTORY (active + revoked = audit trail) "
             + "for a principal (scoped to the caller's brand; SUPERADMIN sees all). "
             + "Revoked rows are retained (never deleted). SUPERADMIN only.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "History list (may be empty)"),
+        @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
+        @ApiResponse(responseCode = "403", description = "Caller lacks ROLE_SUPERADMIN"),
+        @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
     @PreAuthorize(TUBE_MANAGE)
     @GetMapping("/superadmin/access/{userSubject}/history")
     public Mono<TubeAccessDto.AccessList> history(@PathVariable String userSubject, Authentication auth) {
