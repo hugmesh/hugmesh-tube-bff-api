@@ -74,9 +74,10 @@ public class DownloadJobRepository {
     }
 
     /**
-     * Insert a new job row with the given state. The id is a fresh app-generated UUID;
-     * {@link DownloadJob#isNew()} always returns {@code true} so Spring Data performs an
-     * INSERT rather than a SELECT-then-UPDATE.
+     * Insert a new job row with the given state. The id is DB-generated
+     * ({@code (gen_random_uuid())::text DEFAULT}, changelog 008) and returned via
+     * {@code RETURNING id}; {@link DownloadJob#isNew()} always returns {@code true} so
+     * Spring Data performs an INSERT rather than a SELECT-then-UPDATE.
      *
      * @param userSubject the job owner's Casdoor subject
      * @param channelId   the source channel id (coerced to empty string if null)

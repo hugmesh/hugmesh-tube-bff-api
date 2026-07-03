@@ -5,8 +5,8 @@ import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.ImportRuntimeHints;
-import systems.snapdragon.tubebff.access.TubeAccessDto;
 import systems.snapdragon.tubebff.access.TubeAccess;
+import systems.snapdragon.tubebff.access.TubeAccessDto;
 import systems.snapdragon.tubebff.download.DownloadJob;
 import systems.snapdragon.tubebff.download.StorageUsage;
 import systems.snapdragon.tubebff.download.TubeDownloadDto;
@@ -74,7 +74,9 @@ public class NativeHintsConfig {
             return new MemberCategory[] {
                     MemberCategory.INVOKE_DECLARED_CONSTRUCTORS,
                     MemberCategory.INVOKE_DECLARED_METHODS,
-                    MemberCategory.DECLARED_FIELDS,
+                    // DECLARED_FIELDS is deprecated for removal; ACCESS_DECLARED_FIELDS is its
+                    // supported successor with the same declared-field reflective-access semantics.
+                    MemberCategory.ACCESS_DECLARED_FIELDS,
             };
         }
     }

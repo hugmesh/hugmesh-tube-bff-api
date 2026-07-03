@@ -29,7 +29,7 @@ public record TubeSubscription(
         return id;
     }
 
-    /** Always an INSERT (app-generated UUID id). The in-place sync refresh is a
+    /** Always an INSERT (DB-generated id, changelog 008). The in-place sync refresh is a
      *  constant-{@code @Query} partial UPDATE, never a {@code save()} of a read row. */
     @Override
     @Transient

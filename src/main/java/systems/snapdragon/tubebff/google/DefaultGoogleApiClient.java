@@ -1,14 +1,17 @@
 package systems.snapdragon.tubebff.google;
 
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.util.UriComponentsBuilder;
 import reactor.core.publisher.Mono;
 import systems.snapdragon.commons.web.ApiException;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -57,7 +60,7 @@ public class DefaultGoogleApiClient implements GoogleApiClient {
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(BodyInserters.fromFormData(form))
                 .retrieve()
-                .onStatus(s -> s.isError(), r -> Mono.error(
+                .onStatus(HttpStatusCode::isError, r -> Mono.error(
                         ApiException.badGateway("google token exchange failed")))
                 .bodyToMono(Map.class)
                 .map(this::toTokenResponse);
@@ -76,7 +79,7 @@ public class DefaultGoogleApiClient implements GoogleApiClient {
                 .retrieve()
                 // A revoked/expired refresh token returns 4xx (invalid_grant) — surface as
                 // an error so the sync sets reauth_required + stops (no retry loop).
-                .onStatus(s -> s.isError(), r -> Mono.error(
+                .onStatus(HttpStatusCode::isError, r -> Mono.error(
                         ApiException.badGateway("google refresh failed")))
                 .bodyToMono(Map.class)
                 .map(m -> str(m, "access_token"));
@@ -89,7 +92,7 @@ public class DefaultGoogleApiClient implements GoogleApiClient {
         return web.get().uri(b -> buildSubscriptionsUri(pageToken))
                 .headers(h -> h.setBearerAuth(accessToken))
                 .retrieve()
-                .onStatus(s -> s.isError(), r -> Mono.error(
+                .onStatus(HttpStatusCode::isError, r -> Mono.error(
                         ApiException.badGateway("google subscriptions list failed")))
                 .bodyToMono(Map.class)
                 .map(this::toSubscriptionsPage);
@@ -100,9 +103,9 @@ public class DefaultGoogleApiClient implements GoogleApiClient {
      * The URI is pre-built (no UriBuilder template variables) so build(true) is used to
      * preserve any already-encoded characters.
      */
-    private static java.net.URI buildSubscriptionsUri(String pageToken) {
-        var ub = java.net.URI.create(SUBSCRIPTIONS_URI);
-        var builder = org.springframework.web.util.UriComponentsBuilder.fromUri(ub)
+    private static URI buildSubscriptionsUri(String pageToken) {
+        var ub = URI.create(SUBSCRIPTIONS_URI);
+        var builder = UriComponentsBuilder.fromUri(ub)
                 .queryParam("part", "snippet")
                 .queryParam("mine", "true")
                 .queryParam("maxResults", "50");
@@ -122,18 +125,26 @@ public class DefaultGoogleApiClient implements GoogleApiClient {
                 .retrieve()
                 // Best-effort: swallow a non-2xx (the token may already be invalid) so a
                 // disconnect always proceeds to soft-revoke the row.
-                .onStatus(s -> s.isError(), r -> Mono.empty())
+                .onStatus(HttpStatusCode::isError, r -> Mono.empty())
                 .bodyToMono(Void.class);
     }
 
     // ── response mapping ───────────────────────────────────────────────────
 
     private TokenResponse toTokenResponse(Map<?, ?> m) {
+        // KNOWN GAP: googleSub/googleEmail are always null here — this response never
+        // decodes the id_token or calls the userinfo endpoint, and nothing else in this
+        // service does either, so every persisted tube_google_link row currently gets
+        // google_email=null/google_sub=null. FakeGoogleApiClient (test double) DOES
+        // populate both, which is why GoogleConnectControllerTest's $.googleEmail
+        // assertion passes even though production traffic never sets it. Flagged as a
+        // functional gap (not fixed here — implementing id_token/userinfo decoding is
+        // new business logic, out of scope for a quality-only pass).
         return new TokenResponse(
                 str(m, "refresh_token"),
                 str(m, "access_token"),
-                null,                       // google_sub/email come from the id_token/userinfo
-                null,                       // (not decoded here — display-only, populated later)
+                null,                       // google_sub — see gap note above
+                null,                       // google_email — see gap note above
                 str(m, "scope"));
     }
 

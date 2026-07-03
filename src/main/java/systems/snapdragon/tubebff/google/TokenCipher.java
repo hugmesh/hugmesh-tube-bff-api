@@ -6,6 +6,7 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -57,7 +58,7 @@ public class TokenCipher {
             random.nextBytes(iv);
             Cipher cipher = Cipher.getInstance(TRANSFORM);
             cipher.init(Cipher.ENCRYPT_MODE, key(), new GCMParameterSpec(TAG_BITS, iv));
-            byte[] ct = cipher.doFinal(plaintext.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            byte[] ct = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
             byte[] out = ByteBuffer.allocate(iv.length + ct.length).put(iv).put(ct).array();
             return Base64.getEncoder().encodeToString(out);
         } catch (GeneralSecurityException e) {
@@ -86,7 +87,7 @@ public class TokenCipher {
             Cipher cipher = Cipher.getInstance(TRANSFORM);
             cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(TAG_BITS, iv));
             byte[] pt = cipher.doFinal(ct);
-            return new String(pt, java.nio.charset.StandardCharsets.UTF_8);
+            return new String(pt, StandardCharsets.UTF_8);
         } catch (GeneralSecurityException | IllegalArgumentException e) {
             // AEAD tag failure (tamper / wrong DEK) or a malformed blob — fail closed.
             throw new IllegalStateException("refresh-token decryption failed (tampered or wrong key)", e);

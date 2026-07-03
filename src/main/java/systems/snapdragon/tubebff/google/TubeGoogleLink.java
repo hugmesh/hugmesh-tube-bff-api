@@ -36,7 +36,7 @@ public record TubeGoogleLink(
         return id;
     }
 
-    /** Always an INSERT (app-generated UUID id). The soft-revoke + reauth-flag writes are
+    /** Always an INSERT (DB-generated id, changelog 008). The soft-revoke + reauth-flag writes are
      *  constant-{@code @Query} partial UPDATEs, never a {@code save()} of a read row. */
     @Override
     @Transient

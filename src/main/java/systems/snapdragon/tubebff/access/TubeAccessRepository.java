@@ -16,8 +16,11 @@ import java.time.Instant;
  * {@code DatabaseClient} raw SQL to delegate to {@link TubeAccessR2dbcRepository}, the
  * Spring Data R2DBC interface (DERIVED finders + one constant-{@code @Query} CAS),
  * matching the snapdragon-federation-api reactive-repository exemplar. The public
- * method surface, ordering, filters, app-generated UUID ids, and never-delete /
- * CAS-active->revoked audit semantics are UNCHANGED.
+ * method surface, ordering, filters, and never-delete / CAS-active->revoked audit
+ * semantics are UNCHANGED. The id generation strategy is NOT unchanged: changelog 008
+ * subsequently moved ids from app-generated UUIDs to a DB-generated column default
+ * ({@code (gen_random_uuid())::text DEFAULT}) surfaced via {@code RETURNING id} — see
+ * {@link #insertActive}.
  *
  * <p>The READS are DOMAIN-scoped via {@link DomainScope}: a scoped admin only ever
  * resolves rows in THEIR brand; a {@code null}/blank domain is the SUPERADMIN
@@ -36,8 +39,9 @@ public class TubeAccessRepository {
     // ── writes (insert active; CAS active->revoked) ────────────────────
 
     /**
-     * Insert a new ACTIVE override (app-generated id) in the given brand and return it.
-     * {@code expiresAt} null = PERMANENT; a future instant = a TIMEOUT. The {@code domain}
+     * Insert a new ACTIVE override (DB-generated id, changelog 008) in the given brand
+     * and return it. {@code expiresAt} null = PERMANENT; a future instant = a TIMEOUT.
+     * The {@code domain}
      * is the acting principal's brand (defaulted to the platform {@code default} domain
      * for a SUPERADMIN unscoped write so a stamped row always carries a concrete brand).
      */

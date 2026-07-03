@@ -7,6 +7,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -47,7 +48,7 @@ public class GoogleConnectState {
     static final Duration TTL = Duration.ofMinutes(10);
 
     private final byte[] hmacKey;
-    private final java.security.SecureRandom random = new java.security.SecureRandom();
+    private final SecureRandom random = new SecureRandom();
 
     public GoogleConnectState(TubeGoogleProperties props) {
         this.hmacKey = props.decodeStateHmacKey();   // fail-closed: throws unless >=16 bytes

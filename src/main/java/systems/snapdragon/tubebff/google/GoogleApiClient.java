@@ -8,7 +8,7 @@ import java.util.List;
  * The seam over Google's OAuth token endpoint + the YouTube Data API. An INTERFACE so
  * the services depend on a mockable boundary — the tests inject a fake to drive the
  * happy/refresh-failure paths WITHOUT a live Google (and without baking real creds into
- * CI). {@link GoogleApiClient.Default} is the production WebClient impl.
+ * CI). {@link DefaultGoogleApiClient} is the production WebClient impl.
  */
 public interface GoogleApiClient {
 

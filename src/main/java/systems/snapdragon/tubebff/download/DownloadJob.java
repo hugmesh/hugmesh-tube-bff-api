@@ -59,7 +59,7 @@ public record DownloadJob(
         return id;
     }
 
-    /** Always an INSERT (app-generated UUID id). The queue's lifecycle transitions are
+    /** Always an INSERT (DB-generated id, changelog 008). The queue's lifecycle transitions are
      *  derived modifying CASes, never a {@code save()} of a read row, so {@code save()}
      *  is only ever a fresh insert. */
     @Override

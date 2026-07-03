@@ -3,8 +3,13 @@ package systems.snapdragon.tubebff.google;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 import systems.snapdragon.tubebff.access.TubeAccessGuard;
 
@@ -47,6 +52,13 @@ import systems.snapdragon.tubebff.access.TubeAccessGuard;
 @RequestMapping("/bff/tube/google-connect")
 public class GoogleConnectController {
 
+    /** The authenticated floor, matching the sibling {@code TubeDownloadController} /
+     *  {@code TubeMediaController} defence-in-depth pattern. The exact use decision (an
+     *  active grant AND NOT an active ban, SUPERADMIN exempt) is enforced programmatically
+     *  by {@link TubeAccessGuard#assertCanUse} in each handler — a static SpEL cannot
+     *  consult the DB for a per-principal grant/ban. */
+    private static final String AUTHENTICATED = "isAuthenticated()";
+
     private final TubeAccessGuard useGate;
     private final GoogleConnectService connect;
     private final TubeGoogleLinkRepository links;
@@ -63,6 +75,7 @@ public class GoogleConnectController {
     @Operation(operationId = "googleConnectStatus",
             summary = "The current user's Google connection status (display-safe; never "
             + "exposes the refresh token). Use-gated + owner-scoped.")
+    @PreAuthorize(AUTHENTICATED)
     @GetMapping("/status")
     public Mono<TubeGoogleDto.ConnectStatus> status(Authentication auth) {
         return useGate.assertCanUse(auth)
@@ -77,6 +90,7 @@ public class GoogleConnectController {
             summary = "Build the Google consent URL (access_type=offline&prompt=consent "
             + "for a refresh token) with a signed CSRF state binding this principal. "
             + "Use-gated + owner-scoped.")
+    @PreAuthorize(AUTHENTICATED)
     @GetMapping("/authorize")
     public Mono<TubeGoogleDto.AuthorizeUrl> authorize(Authentication auth) {
         return useGate.assertCanUse(auth)
@@ -88,6 +102,7 @@ public class GoogleConnectController {
             summary = "Google's OAuth redirect target: verify the signed state, exchange "
             + "the code, AES-256-GCM-encrypt + store the refresh token. The state binds the "
             + "principal (the callback hop carries no bearer of its own). Use-gated + owner-scoped.")
+    @PreAuthorize(AUTHENTICATED)
     @GetMapping("/callback")
     public Mono<ResponseEntity<TubeGoogleDto.ConnectStatus>> callback(
             @RequestParam("code") String code, @RequestParam("state") String state,
@@ -100,6 +115,7 @@ public class GoogleConnectController {
     @Operation(operationId = "googleDisconnect",
             summary = "Disconnect: best-effort revoke the token at Google, then "
             + "soft-revoke the connection (audit-retained). Use-gated + owner-scoped.")
+    @PreAuthorize(AUTHENTICATED)
     @PostMapping("/disconnect")
     public Mono<ResponseEntity<TubeGoogleDto.ConnectStatus>> disconnect(Authentication auth) {
         return useGate.assertCanUse(auth)

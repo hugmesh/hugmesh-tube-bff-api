@@ -37,7 +37,7 @@ public record TubeSubscription(
         return id;
     }
 
-    /** Always an INSERT (app-generated UUID id). The in-place latest-video refresh is a
+    /** Always an INSERT (DB-generated id, changelog 008). The in-place latest-video refresh is a
      *  derived/constant-{@code @Query} partial UPDATE, never a {@code save()} of a read
      *  row, so {@code save()} is only ever a fresh insert. */
     @Override
