@@ -304,27 +304,27 @@ are verified against the current code (not invented) and are consumers/producers
 is wired for but that live in a separate, not-yet-written component:
 
 - **No yt-dlp worker actually calls the claim/report seam yet.** `TubeDownloadWorkerController`
-  (`src/main/java/systems/snapdragon/tubebff/download/TubeDownloadWorkerController.java:32-70`)
-  and the `ROLE_TUBE_WORKER`-only path gate (`src/main/java/systems/snapdragon/tubebff/config/SecurityConfig.java:165`)
+  (`src/main/java/systems/snapdragon/tubebff/download/TubeDownloadWorkerController.java:36-104`)
+  and the `ROLE_TUBE_WORKER`-only path gate (`src/main/java/systems/snapdragon/tubebff/config/SecurityConfig.java:168`)
   are fully implemented and gated, but the queue only drains when an external worker
   polls `POST /bff/tube/internal/download-jobs/{claim,report}` — that CronJob/image does
   not exist in this repo (tracked above under "yt-dlp downloader runner image").
 - **No consumer of the signed media URL exists in this repo.** `TubeMediaController.sign`/
-  `verify` (`src/main/java/systems/snapdragon/tubebff/media/TubeMediaController.java:131-205`)
+  `verify` (`src/main/java/systems/snapdragon/tubebff/media/TubeMediaController.java:127-214`)
   fully implements signing + verification, but the tube-media Nginx sidecar that would call
   `GET /bff/tube/media/verify` as its `auth_request` target, and serve the actual bytes at
   `be-gateway /tube/content/**`, is external (tracked above).
 - **Admin governance surface is grant/timeout/ban/restore + storage-budget only.**
-  `TubeStorageBudgetController` (`src/main/java/systems/snapdragon/tubebff/download/TubeStorageBudgetController.java:37-72`)
+  `TubeStorageBudgetController` (`src/main/java/systems/snapdragon/tubebff/download/TubeStorageBudgetController.java:39-80`)
   exposes only a `POST` to set a user's budget — there is no `GET` to read current
   per-user budgets/usage in bulk, and no quota/retention/cadence admin endpoints exist
   anywhere under `download/` or `access/` (the PR8 wider admin surface referenced above).
-- **`DownloadJob.contentPath`** (`src/main/java/systems/snapdragon/tubebff/download/DownloadJob.java:53`)
+- **`DownloadJob.contentPath`** (`src/main/java/systems/snapdragon/tubebff/download/DownloadJob.java:65`)
   is stamped by the worker's `report` call and stored, but nothing in this repo resolves
   or serves that path — it is consumed only by the (external) tube-media sidecar.
 - **`tube_google_link.google_sub` / `google_email` are always persisted as `NULL` in
   production.** `DefaultGoogleApiClient.toTokenResponse`
-  (`src/main/java/systems/snapdragon/tubebff/google/DefaultGoogleApiClient.java:132-141`)
+  (`src/main/java/systems/snapdragon/tubebff/google/DefaultGoogleApiClient.java:158-173`)
   never decodes the token endpoint's `id_token` and never calls the Google `userinfo`
   endpoint, and no other class in this repo does either — only the `refresh_token` /
   `access_token` / `scope` fields of the OAuth token response are real. The test-only
