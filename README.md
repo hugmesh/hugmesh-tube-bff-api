@@ -327,8 +327,31 @@ is wired for but that live in a separate, not-yet-written component:
   (`src/main/java/systems/snapdragon/tubebff/google/DefaultGoogleApiClient.java:158-173`)
   never decodes the token endpoint's `id_token` and never calls the Google `userinfo`
   endpoint, and no other class in this repo does either — only the `refresh_token` /
-  `access_token` / `scope` fields of the OAuth token response are real. The test-only
-  `FakeGoogleApiClient` double populates both fields, which is why
-  `GoogleConnectControllerTest`'s `$.googleEmail` assertion currently passes even though
-  the equivalent production call path always writes `NULL`. Implementing id_token/userinfo
-  decoding is new business logic and is out of scope for a docs/quality-only pass.
+  `access_token` / `scope` fields of the OAuth token response are real. No test catches
+  this because **no test asserts on `googleSub`/`googleEmail` off the persistence path at
+  all**: `GoogleConnectServiceTest` drives the connect flow but never inspects either
+  field, and `GoogleConnectControllerTest`'s `$.googleEmail` assertion is a `@WebFluxTest`
+  that mocks `GoogleConnectService`/`TubeGoogleLinkRepository` and hand-builds the
+  `TubeGoogleLink` it asserts against — so it exercises the `ConnectStatus` DTO projection
+  in isolation and never reaches `DefaultGoogleApiClient`. (`FakeGoogleApiClient` does
+  fabricate a sub/email that production cannot produce, but it is not in that controller
+  test's object graph and no test reads those fields, so it masks nothing today — it is a
+  latent trap that would spuriously green a future test rather than the cause of the
+  current gap.) Impact is limited: `google_sub` is **write-only** — nothing in this repo
+  reads it — and `google_email` is read only by `TubeGoogleDto.ConnectStatus` for display.
+  Neither is a lookup/authz/dedup key (see `005-tube-google-link.xml`).
+
+  **Closing this gap is NOT just "decode the id_token" — that alone cannot work.**
+  `GoogleConnectService.buildAuthorizeUrl` requests exactly one scope
+  (`SCOPE = https://www.googleapis.com/auth/youtube.readonly`, deliberately "the minimum
+  scope"), and Google only issues an `id_token` when the authorization request carries the
+  `openid` scope — "[t]he scope parameter must begin with the `openid` value"
+  ([Google OIDC docs](https://developers.google.com/identity/protocols/oauth2/openid-connect)).
+  So no `id_token` is ever present in our token response to decode, and `userinfo` is
+  equally unavailable (it needs `openid`/`email`/`profile`). Populating `google_email`
+  therefore REQUIRES adding `openid email` to `SCOPE` — a **consent-surface expansion**:
+  every user would be asked to share their identity and email address on the Google
+  consent screen, contradicting the stated minimum-scope design, in exchange for a
+  display-only field that `tube-ui` already renders with a `|| 'your Google account'`
+  fallback. Existing links would stay `NULL` regardless (their grants predate the scope).
+  That is a product/privacy decision, not a mechanical fix — hence still open.

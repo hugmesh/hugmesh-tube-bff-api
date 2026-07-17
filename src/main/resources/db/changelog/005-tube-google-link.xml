@@ -60,9 +60,17 @@
             <column name="user_subject" type="varchar(400)">
                 <constraints nullable="false"/>
             </column>
-            <!-- Google's stable account id (sub) + email from the token exchange — for
-                 display + de-dup; NULLABLE until the first successful exchange populates
-                 them. -->
+            <!-- Google's stable account id (sub) + email from the token exchange.
+                 DISPLAY-ONLY, and NOT de-dup keys: nothing keys, joins or de-dups on
+                 either column, and neither carries a unique constraint. The at-most-one-
+                 live-connection invariant is enforced solely by uq_tube_google_link_live
+                 on (domain, user_subject) below. google_email in particular is MUTABLE
+                 and re-assignable at Google and must never become an identity key; sub is
+                 the stable identifier if one is ever needed.
+                 NULLABLE — and in practice ALWAYS NULL today: the token exchange never
+                 decodes the id_token, so nothing ever populates them (README Known Gaps).
+                 google_sub is currently write-only; google_email is read only by
+                 TubeGoogleDto.ConnectStatus for display. -->
             <column name="google_sub" type="varchar(255)"/>
             <column name="google_email" type="varchar(320)"/>
             <!-- The crown jewel: base64(iv || ct || tag) AES-256-GCM ciphertext of the
