@@ -40,10 +40,22 @@
     </dependency>
 
     <!-- Commons test-support base classes (PostgresTestSupport Testcontainers base
-         for full-context tests). Managed version + tests classifier. -->
+         for full-context tests). An EXPLICIT <version> is required here and cannot be
+         omitted: Maven keys dependencyManagement by groupId:artifactId:type:classifier,
+         so snapdragon-parent's classifier-less managed snapdragon-commons entry does NOT
+         match this tests-classifier dependency. Omitting the version is a hard POM
+         validation error ("'dependencies.dependency.version' ... is missing"), which
+         made this module unbuildable. Every sibling that consumes the tests jar
+         (forum/owncast/mod/admin/user/wiki-bff, auth-core, federation-api) pins it
+         explicitly for the same reason. We use the parent's ${snapdragon-commons.version}
+         property (as federation-api does) so this stays locked to the SAME version the
+         parent's dependencyManagement supplies for the compile-scoped dependency above;
+         a hard-coded literal would silently diverge on a parent bump and put two
+         snapdragon-commons versions on the test classpath. -->
     <dependency>
       <groupId>systems.snapdragon</groupId>
       <artifactId>snapdragon-commons</artifactId>
+      <version>${snapdragon-commons.version}</version>
       <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>
