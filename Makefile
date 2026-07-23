@@ -1,11 +1,11 @@
-# Snapdragon tube-bff — developer Makefile.
+# HugMesh tube-bff — developer Makefile.
 #
 # `make pentest` runs the repo-local OWASP self-scan that MIRRORS the CI pentest
 # stage (.gitlab-ci.yml -> the generator's pentest-stage.gitlab-ci.yml):
 #   * SCA  : OWASP Dependency-Check over this Maven project (offline-capable;
 #            mirrors the .pentest-sca CI job).
 #   * DAST : when $DAST_TARGET_URL is set, delegate to the shared pen-test
-#            harness (tests/pentest/run-pentest.sh in snapdragon-generator), the
+#            harness (tests/pentest/run-pentest.sh in hugmesh-generator), the
 #            SAME driver .pentest-dast-baseline runs (full probes + nuclei).
 #
 # It is self-contained and does NOT hard-fail when no target / tooling is
@@ -20,8 +20,8 @@ PENTEST_SCA_CVSS ?= 9
 
 # Where the shared DAST harness lives. Defaults to a sibling generator checkout;
 # override PENTEST_HARNESS_DIR to point at a vendored / cloned harness.
-PENTEST_HARNESS_DIR ?= ../snapdragon-generator/tests/pentest
-PENTEST_HARNESS_REPO ?= https://github.com/Snapdragon-Systems/snapdragon-generator.git
+PENTEST_HARNESS_DIR ?= ../hugmesh-generator/tests/pentest
+PENTEST_HARNESS_REPO ?= https://github.com/Snapdragon-Systems/hugmesh-generator.git
 
 .PHONY: pentest pentest-sca pentest-dast
 

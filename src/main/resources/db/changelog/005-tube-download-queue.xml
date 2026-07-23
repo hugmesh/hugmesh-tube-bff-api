@@ -42,7 +42,7 @@
     -->
 
     <!-- ── tube_download_job ──────────────────────────────────────────────── -->
-    <changeSet id="005-tube-download-job" author="snapdragon">
+    <changeSet id="005-tube-download-job" author="hugmesh">
         <comment>tube_download_job download work-queue (state machine + dedup +
                  claim/report; domain-scoped).</comment>
         <createTable tableName="tube_download_job">
@@ -93,7 +93,7 @@
         </createTable>
     </changeSet>
 
-    <changeSet id="005-tube-download-job-state-check" author="snapdragon">
+    <changeSet id="005-tube-download-job-state-check" author="hugmesh">
         <comment>CHECK: state is one of the six work-queue lifecycle values.</comment>
         <sql>
             ALTER TABLE tube_download_job
@@ -109,7 +109,7 @@
       and the H2 PG-compat slice store (unlike the tube_access PARTIAL unique). The enqueue
       is idempotent against it (find-then-insert on H2; ON CONFLICT DO NOTHING on PG).
     -->
-    <changeSet id="005-tube-download-job-dedup-unique" author="snapdragon">
+    <changeSet id="005-tube-download-job-dedup-unique" author="hugmesh">
         <comment>UNIQUE dedup: one download job per (domain, user_subject, video_id).</comment>
         <createIndex tableName="tube_download_job" indexName="uq_tube_download_job_dedup" unique="true">
             <column name="domain"/>
@@ -121,7 +121,7 @@
         </rollback>
     </changeSet>
 
-    <changeSet id="005-tube-download-job-claim-index" author="snapdragon">
+    <changeSet id="005-tube-download-job-claim-index" author="hugmesh">
         <comment>Index the claim scan (oldest queued rows first) + the owner list.</comment>
         <createIndex tableName="tube_download_job" indexName="idx_tube_download_job_state">
             <column name="state"/>
@@ -132,7 +132,7 @@
         </rollback>
     </changeSet>
 
-    <changeSet id="005-tube-download-job-owner-index" author="snapdragon">
+    <changeSet id="005-tube-download-job-owner-index" author="hugmesh">
         <comment>Index the owner-scoped list read (domain, user_subject).</comment>
         <createIndex tableName="tube_download_job" indexName="idx_tube_download_job_owner">
             <column name="domain"/>
@@ -144,7 +144,7 @@
     </changeSet>
 
     <!-- ── tube_storage_usage ─────────────────────────────────────────────── -->
-    <changeSet id="005-tube-storage-usage" author="snapdragon">
+    <changeSet id="005-tube-storage-usage" author="hugmesh">
         <comment>tube_storage_usage per-user content-byte accounting + budget cap
                  (PK(domain, user_subject); pause-on-full at enqueue/claim).</comment>
         <createTable tableName="tube_storage_usage">
@@ -172,7 +172,7 @@
         </createTable>
     </changeSet>
 
-    <changeSet id="005-tube-storage-usage-pk" author="snapdragon">
+    <changeSet id="005-tube-storage-usage-pk" author="hugmesh">
         <comment>Composite PK (domain, user_subject) — one accounting row per (brand,user).</comment>
         <addPrimaryKey tableName="tube_storage_usage"
                        columnNames="domain, user_subject"

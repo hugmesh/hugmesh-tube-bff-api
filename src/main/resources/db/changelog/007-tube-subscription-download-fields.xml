@@ -20,7 +20,7 @@
         updated_at        — row last-modified timestamp (bumped on every sync UPSERT).
     -->
 
-    <changeSet id="007-tube-subscription-download-fields" author="snapdragon">
+    <changeSet id="007-tube-subscription-download-fields" author="hugmesh">
         <comment>Add download-queue source fields to tube_subscription: latest_video_id,
                  latest_video_title, created_at, updated_at.</comment>
         <addColumn tableName="tube_subscription">

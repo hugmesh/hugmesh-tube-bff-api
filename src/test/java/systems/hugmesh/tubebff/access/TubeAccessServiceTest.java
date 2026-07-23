@@ -1,0 +1,196 @@
+package systems.hugmesh.tubebff.access;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.data.r2dbc.test.autoconfigure.DataR2dbcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import systems.hugmesh.commons.security.DomainRegistry;
+import systems.hugmesh.tubebff.security.PrincipalDomain;
+import org.springframework.test.context.ActiveProfiles;
+import systems.hugmesh.commons.testsupport.PostgresTestSupport;
+import systems.hugmesh.tubebff.support.PostgresSliceTestConfig;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * The tube use write service over the REAL repo + a multi-brand {@link PrincipalDomain}
+ * (so the issuer-derived domain scoping of every grant/timeout/ban/revoke is exercised
+ * end to end). Delineated per the test standard:
+ *
+ * <ul>
+ *   <li><b>USER-SITUATIONAL</b> — grant writes an active use row stamped with the
+ *       actor's brand + subject; timeout writes a banned row with a future expiry; ban
+ *       writes a permanent banned row; revoke CASes active->revoked (audit-retained).</li>
+ *   <li><b>MULTIUSER / idempotency</b> — a re-grant/re-ban while active is a no-op (the same
+ *       row), so at most one active row of a type exists per (brand,user) — the H2 stand-in
+ *       for the PG partial-unique index.</li>
+ *   <li><b>CROSS-USER (DENY isolation)</b> — an admin of brand X cannot revoke brand Y's
+ *       override (it is invisible to its scope); SUPERADMIN acts cross-domain.</li>
+ * </ul>
+ */
+@DataR2dbcTest
+@Import({PostgresSliceTestConfig.class, TubeAccessRepository.class})
+@ActiveProfiles("test")
+class TubeAccessServiceTest extends PostgresTestSupport {
+
+    @Autowired TubeAccessRepository repo;
+
+    private TubeAccessService service;
+
+    /** Multi-brand registry: brandx + brandy issuers. */
+    private static final DomainRegistry MULTI = new DomainRegistry(
+            "https://id.brandx.example",
+            "https://id.brandx.example=brandx,https://id.brandy.example=brandy");
+
+    private static final AtomicInteger SEQ = new AtomicInteger();
+    // Class-unique prefix (see TubeAccessRepositoryTest): the slice tests share one
+    // cached context + H2 store, so prefix this class's subjects to avoid collisions.
+    private String user(String tag) { return "svc-" + tag + "-" + SEQ.incrementAndGet(); }
+
+    @BeforeEach
+    void setUp() {
+        service = new TubeAccessService(repo, new PrincipalDomain(MULTI));
+    }
+
+    /** A JWT principal for a brand + admin subject (the actor of an overlay write). */
+    private static Authentication admin(String issuer, String subject, String... roles) {
+        Jwt jwt = Jwt.withTokenValue("t").header("alg", "none")
+                .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(3600))
+                .subject(subject).claim("iss", issuer).issuer(issuer)
+                .claim("roles", List.of(roles)).build();
+        List<GrantedAuthority> auths = Stream.concat(
+                Stream.of(new SimpleGrantedAuthority("ROLE_USER")),
+                Stream.of(roles).map(r -> new SimpleGrantedAuthority("ROLE_" + r.toUpperCase())))
+                .collect(Collectors.toList());
+        return new UsernamePasswordAuthenticationToken(jwt, "n/a", auths);
+    }
+
+    // ── USER-SITUATIONAL ──────────────────────────────────────────────────────
+    @Nested
+    class UserSituational {
+
+        @Test
+        void grant_writesActiveUseRow_stampedWithActorBrandAndSubject() {
+            String u = user("us-grant");
+            Authentication adminX = admin("https://id.brandx.example", "admin-x", "admin");
+
+            TubeAccess a = service.grant(u, "welcome", adminX).block();
+            assertThat(a.accessType()).isEqualTo(TubeAccess.TYPE_USE);
+            assertThat(a.isActive()).isTrue();
+            assertThat(a.expiresAt()).isNull();
+            assertThat(a.domain()).isEqualTo("brandx");        // from issuer
+            assertThat(a.grantedBySubject()).isEqualTo("admin-x"); // from JWT subject
+        }
+
+        @Test
+        void timeout_writesBannedRowWithFutureExpiry() {
+            String u = user("us-timeout");
+            Authentication adminX = admin("https://id.brandx.example", "admin-x", "admin");
+
+            TubeAccess a = service.timeout(u, 3600, "cooldown", adminX).block();
+            assertThat(a.accessType()).isEqualTo(TubeAccess.TYPE_BANNED);
+            assertThat(a.expiresAt()).isNotNull();
+            assertThat(a.expiresAt()).isAfter(Instant.now());
+        }
+
+        @Test
+        void ban_writesPermanentBannedRow() {
+            String u = user("us-ban");
+            Authentication adminX = admin("https://id.brandx.example", "admin-x", "admin");
+
+            TubeAccess a = service.ban(u, "abuse", adminX).block();
+            assertThat(a.accessType()).isEqualTo(TubeAccess.TYPE_BANNED);
+            assertThat(a.expiresAt()).isNull();   // permanent
+        }
+
+        @Test
+        void revoke_liftsActiveOverride_auditRetained() {
+            String u = user("us-revoke");
+            Authentication adminX = admin("https://id.brandx.example", "admin-x", "admin");
+            service.ban(u, "x", adminX).block();
+
+            service.revoke(u, TubeAccess.TYPE_BANNED, adminX).block();
+            assertThat(repo.findActive(u, TubeAccess.TYPE_BANNED, "brandx").blockOptional()).isEmpty();
+            // The history retains the revoked row (audit).
+            assertThat(service.historyFor(u, adminX).collectList().block())
+                    .anySatisfy(a -> assertThat(a.state()).isEqualTo(TubeAccess.STATE_REVOKED));
+        }
+    }
+
+    // ── MULTIUSER / idempotency (the H2 stand-in for the PG partial-unique) ────
+    @Nested
+    class Idempotency {
+
+        @Test
+        void reGrant_whileActive_isNoOp_sameRow() {
+            String u = user("idem-grant");
+            Authentication adminX = admin("https://id.brandx.example", "admin-x", "admin");
+
+            TubeAccess first = service.grant(u, "a", adminX).block();
+            TubeAccess second = service.grant(u, "b", adminX).block();
+            assertThat(second.id()).isEqualTo(first.id());   // returned existing, not a 2nd row
+            assertThat(repo.activeFor(u, "brandx").collectList().block()).hasSize(1);
+        }
+
+        @Test
+        void reBan_whileActive_isNoOp_sameRow() {
+            String u = user("idem-ban");
+            Authentication adminX = admin("https://id.brandx.example", "admin-x", "admin");
+
+            TubeAccess first = service.ban(u, "a", adminX).block();
+            TubeAccess second = service.ban(u, "b", adminX).block();
+            assertThat(second.id()).isEqualTo(first.id());
+            long activeBanned = repo.activeFor(u, "brandx").collectList().block().stream()
+                    .filter(a -> TubeAccess.TYPE_BANNED.equals(a.accessType())).count();
+            assertThat(activeBanned).isEqualTo(1L);
+        }
+    }
+
+    // ── CROSS-USER (DENY isolation) ───────────────────────────────────────────
+    @Nested
+    class CrossUser {
+
+        /** An admin of brand X cannot revoke brand Y's override (invisible to its scope);
+         *  the brand-Y override stays active. SUPERADMIN can. */
+        @Test
+        void adminCannotRevokeAnotherBrandsOverride() {
+            String u = user("cu-revoke");
+            Authentication adminX = admin("https://id.brandx.example", "admin-x", "admin");
+            Authentication adminY = admin("https://id.brandy.example", "admin-y", "admin");
+            service.ban(u, "y-ban", adminY).block();   // a ban in brand Y
+
+            // Admin X tries to lift it — no-op (brand Y's row is invisible to brand X).
+            service.revoke(u, TubeAccess.TYPE_BANNED, adminX).block();
+            assertThat(repo.findActive(u, TubeAccess.TYPE_BANNED, "brandy").block()).isNotNull();
+
+            // Admin Y (own brand) lifts it.
+            service.revoke(u, TubeAccess.TYPE_BANNED, adminY).block();
+            assertThat(repo.findActive(u, TubeAccess.TYPE_BANNED, "brandy").blockOptional()).isEmpty();
+        }
+
+        @Test
+        void sameUser_grantInX_doesNotAffectY() {
+            String u = user("cu-iso");
+            Authentication adminX = admin("https://id.brandx.example", "admin-x", "admin");
+            service.grant(u, "x-grant", adminX).block();
+
+            Authentication adminY = admin("https://id.brandy.example", "admin-y", "admin");
+            // brand Y sees no override for this user.
+            assertThat(service.listActive(adminY).collectList().block())
+                    .noneSatisfy(a -> assertThat(a.userSubject()).isEqualTo(u));
+        }
+    }
+}

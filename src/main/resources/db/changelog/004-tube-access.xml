@@ -54,7 +54,7 @@
                       principal's active rows for their brand at request time]
     -->
 
-    <changeSet id="004-tube-access" author="snapdragon">
+    <changeSet id="004-tube-access" author="hugmesh">
         <comment>tube_access use grant/timeout/ban overlay (desired-state; cloned from
                  owncast-bff owncast_grant).</comment>
         <createTable tableName="tube_access">
@@ -100,7 +100,7 @@
         </createTable>
     </changeSet>
 
-    <changeSet id="004-tube-access-type-check" author="snapdragon">
+    <changeSet id="004-tube-access-type-check" author="hugmesh">
         <comment>CHECK: access_type is one of the two override kinds.</comment>
         <sql>
             ALTER TABLE tube_access
@@ -110,7 +110,7 @@
         <rollback>ALTER TABLE tube_access DROP CONSTRAINT ck_tube_access_type</rollback>
     </changeSet>
 
-    <changeSet id="004-tube-access-state-check" author="snapdragon">
+    <changeSet id="004-tube-access-state-check" author="hugmesh">
         <comment>CHECK: state is one of the two lifecycle values the service writes.</comment>
         <sql>
             ALTER TABLE tube_access
@@ -128,7 +128,7 @@
       the service (findActive-before-insert). (Mirrors the owncast_grant
       uq_owncast_grant_active / wiki_access uq_wiki_access_active gating exactly.)
     -->
-    <changeSet id="004-tube-access-active-unique" author="snapdragon">
+    <changeSet id="004-tube-access-active-unique" author="hugmesh">
         <preConditions onFail="MARK_RAN" onError="MARK_RAN">
             <dbms type="postgresql"/>
         </preConditions>
@@ -143,7 +143,7 @@
         <rollback>DROP INDEX uq_tube_access_active</rollback>
     </changeSet>
 
-    <changeSet id="004-tube-access-lookup-index" author="snapdragon">
+    <changeSet id="004-tube-access-lookup-index" author="hugmesh">
         <comment>Index the enforcement read path (load a principal's overrides for their
                  brand at request time).</comment>
         <createIndex tableName="tube_access" indexName="idx_tube_access_lookup">

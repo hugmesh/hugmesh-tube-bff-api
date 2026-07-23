@@ -43,7 +43,7 @@
       generic type so the same DDL applies on H2.
     -->
 
-    <changeSet id="005-tube-google-link" author="snapdragon">
+    <changeSet id="005-tube-google-link" author="hugmesh">
         <comment>tube_google_link Google OAuth connection (refresh token AES-256-GCM at
                  rest; no plaintext column).</comment>
         <createTable tableName="tube_google_link">
@@ -105,7 +105,7 @@
       invariant is enforced by the SERVICE (find-live-before-insert) — mirroring the
       004 uq_tube_access_active gating exactly.
     -->
-    <changeSet id="005-tube-google-link-live-unique" author="snapdragon">
+    <changeSet id="005-tube-google-link-live-unique" author="hugmesh">
         <preConditions onFail="MARK_RAN" onError="MARK_RAN">
             <dbms type="postgresql"/>
         </preConditions>
@@ -120,7 +120,7 @@
         <rollback>DROP INDEX uq_tube_google_link_live</rollback>
     </changeSet>
 
-    <changeSet id="005-tube-google-link-lookup-index" author="snapdragon">
+    <changeSet id="005-tube-google-link-lookup-index" author="hugmesh">
         <comment>Index the owner-scoped lookup (resolve a principal's live connection for
                  their brand).</comment>
         <createIndex tableName="tube_google_link" indexName="idx_tube_google_link_lookup">

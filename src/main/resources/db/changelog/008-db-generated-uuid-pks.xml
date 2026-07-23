@@ -44,7 +44,7 @@
          pgcrypto defensively (idempotent + harmless if already present) — mirrors the
          mod-bff / admin-bff exemplars. Gated to PostgreSQL: the test store IS Postgres
          (commons PostgresTestSupport), and the production runtime is Postgres. -->
-    <changeSet id="008-pgcrypto-extension" author="snapdragon">
+    <changeSet id="008-pgcrypto-extension" author="hugmesh">
         <preConditions onFail="MARK_RAN" onError="MARK_RAN">
             <dbms type="postgresql"/>
         </preConditions>
@@ -56,7 +56,7 @@
     <!-- tube_access.id (varchar(64), changelog 004): DB-generate via (gen_random_uuid())::text
          instead of TubeAccessRepository minting UUID.randomUUID().toString(). INSERT omits id,
          RETURNING id reads it back. -->
-    <changeSet id="008-gen-uuid-tube_access" author="snapdragon">
+    <changeSet id="008-gen-uuid-tube_access" author="hugmesh">
         <comment>DB-generate tube_access.id ((gen_random_uuid())::text) instead of the app
                  minting it; INSERT omits id, RETURNING id reads it back.</comment>
         <addDefaultValue tableName="tube_access" columnName="id"
@@ -67,7 +67,7 @@
     <!-- tube_download_job.id (varchar(64), changelog 005): DB-generate via
          (gen_random_uuid())::text instead of DownloadJobRepository minting it. The
          find-then-write dedup (enqueue) is unchanged; only the fresh-INSERT branch omits id. -->
-    <changeSet id="008-gen-uuid-tube_download_job" author="snapdragon">
+    <changeSet id="008-gen-uuid-tube_download_job" author="hugmesh">
         <comment>DB-generate tube_download_job.id ((gen_random_uuid())::text) instead of the
                  app minting it; INSERT omits id, RETURNING id reads it back.</comment>
         <addDefaultValue tableName="tube_download_job" columnName="id"
@@ -78,7 +78,7 @@
     <!-- tube_google_link.id (varchar(64), changelog 005): DB-generate via
          (gen_random_uuid())::text instead of TubeGoogleLinkRepository minting it. INSERT omits
          id, RETURNING id reads it back; the soft-revoke audit semantics are unchanged. -->
-    <changeSet id="008-gen-uuid-tube_google_link" author="snapdragon">
+    <changeSet id="008-gen-uuid-tube_google_link" author="hugmesh">
         <comment>DB-generate tube_google_link.id ((gen_random_uuid())::text) instead of the
                  app minting it; INSERT omits id, RETURNING id reads it back.</comment>
         <addDefaultValue tableName="tube_google_link" columnName="id"
@@ -91,7 +91,7 @@
          single shared table (SubscriptionRepository.insert + TubeSubscriptionRepository.insert);
          the find-then-write / update-then-insert upsert idioms are unchanged, only each
          fresh-INSERT branch omits id and reads the DB-generated id back via RETURNING id. -->
-    <changeSet id="008-gen-uuid-tube_subscription" author="snapdragon">
+    <changeSet id="008-gen-uuid-tube_subscription" author="hugmesh">
         <comment>DB-generate tube_subscription.id ((gen_random_uuid())::text) instead of the
                  app minting it; INSERT omits id, RETURNING id reads it back (both mint sites).</comment>
         <addDefaultValue tableName="tube_subscription" columnName="id"

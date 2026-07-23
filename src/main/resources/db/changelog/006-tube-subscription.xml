@@ -32,7 +32,7 @@
       updated_at) are added in changeset 007-tube-subscription-download-fields.xml.
     -->
 
-    <changeSet id="006-tube-subscription" author="snapdragon">
+    <changeSet id="006-tube-subscription" author="hugmesh">
         <comment>tube_subscription mirror of the user's subscribed YouTube channels
                  (idempotent UPSERT per channel).</comment>
         <createTable tableName="tube_subscription">
@@ -59,7 +59,7 @@
         </createTable>
     </changeSet>
 
-    <changeSet id="006-tube-subscription-unique" author="snapdragon">
+    <changeSet id="006-tube-subscription-unique" author="hugmesh">
         <comment>UNIQUE (domain, user_subject, channel_id) — at most one row per
                  (brand, user, channel); the sync UPSERTs in place. A FULL (non-partial)
                  unique index, portable to both Postgres and the H2 slice store.</comment>
@@ -72,7 +72,7 @@
         </rollback>
     </changeSet>
 
-    <changeSet id="006-tube-subscription-lookup-index" author="snapdragon">
+    <changeSet id="006-tube-subscription-lookup-index" author="hugmesh">
         <comment>Index the owner-scoped list read (a user's channels for their brand).</comment>
         <createIndex tableName="tube_subscription" indexName="idx_tube_subscription_lookup">
             <column name="domain"/>

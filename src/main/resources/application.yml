@@ -1,6 +1,6 @@
 spring:
   application:
-    name: snapdragon-tube-bff-api
+    name: hugmesh-tube-bff-api
   security:
     oauth2:
       resourceserver:
@@ -44,7 +44,7 @@ tube:
     state-hmac-key: "${TUBE_GOOGLE_STATE_HMAC_KEY:}"
 
 # SpringDoc OpenAPI. The spec at /v3/api-docs is the source the platform
-# ng-openapi-gen typed client (the paired snapdragon-tube-ui, PR6) + the docs
+# ng-openapi-gen typed client (the paired hugmesh-tube-ui, PR6) + the docs
 # pipeline consume. Spec + UI are gated by SecurityConfig: permitAll under dev/test (so
 # `gen:fetch` can curl the spec without a token) and ROLE_ADMIN otherwise (prod).
 springdoc:
@@ -67,7 +67,7 @@ springdoc:
     path: /swagger-ui.html
   # Restrict the component scan to this BFF's own controllers so the spec stays the
   # tube-BFF surface only (no stray springframework/actuator paths leak in).
-  packages-to-scan: systems.snapdragon.tubebff
+  packages-to-scan: systems.hugmesh.tubebff
 
 # Tube download work-queue (PR4) tunables. The default per-user storage budget seeded
 # onto a new tube_storage_usage accounting row (bytes); an admin may raise/lower it per

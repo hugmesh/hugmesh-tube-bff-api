@@ -1,11 +1,11 @@
-# snapdragon-tube-bff-api
+# hugmesh-tube-bff-api
 
 Tube BFF — the access-governance + control plane for the **LocalTube** video OPTIONAL
 SERVICE (self-hosted personal YouTube archival: a user connects Google, their subscribed
 channels sync to a DB, and yt-dlp downloads new videos on a schedule for owner-private
-in-platform viewing). Twin of `snapdragon-owncast-bff-api` / `snapdragon-wiki-bff-api`
+in-platform viewing). Twin of `hugmesh-owncast-bff-api` / `hugmesh-wiki-bff-api`
 (Java 25 WebFlux + R2DBC Postgres + Liquibase + Casdoor JWT resource server, package
-`systems.snapdragon.tubebff`, artifact `tube-bff` 0.1.0, Spring Boot 4.0.7).
+`systems.hugmesh.tubebff`, artifact `tube-bff` 0.2.0, Spring Boot 4.0.7).
 
 > **State convention:** ✅ shipped (on `main`) · 🚧 in-flight (open branch/PR) ·
 > 🔭 planned (design only, no code in this repo). See the
@@ -13,16 +13,16 @@ in-platform viewing). Twin of `snapdragon-owncast-bff-api` / `snapdragon-wiki-bf
 
 ## Current State
 
-As of 2026-06-24 this BFF sits on the unified Snapdragon ecosystem baseline:
+As of 2026-06-24 this BFF sits on the unified HugMesh ecosystem baseline:
 
 - **Spring Boot 4.0.7 / Spring Cloud 2025.1.2, Java 25 LTS, WebFlux reactive.** The build is
-  a child of the org metapom **`snapdragon-parent` 2.7.0** (which itself rides Boot 4), so
+  a child of the org metapom **`hugmesh-parent` 2.8.0** (which itself rides Boot 4), so
   the reactive-BFF dependency + plugin baseline is inherited, not duplicated here.
-- **Shared security/tenancy via `snapdragon-commons` 2.7.0** (`systems.snapdragon.commons.*`).
+- **Shared security/tenancy via `hugmesh-commons` 2.7.0** (`systems.hugmesh.commons.*`).
   This BFF's former local copies of `security.{Roles,CasdoorAuthorities,DomainRegistry,DomainScope}`,
   `config.TenancyResourceServerConfig` and `web.ApiException` were deleted and now come
   from commons (version managed by the parent). This BFF does **not** depend on
-  `snapdragon-auth-core` — that artifact carries account/session/MFA/Casdoor-admin infra
+  `hugmesh-auth-core` — that artifact carries account/session/MFA/Casdoor-admin infra
   and is consumed only by `user-bff` + `admin-bff`; tube-bff owns no login/session/account
   surface (it only connects Google for `youtube.readonly` on behalf of an
   already-authenticated principal).
@@ -246,7 +246,7 @@ CI = GitLab (`.gitlab-ci.yml`). The GitHub repo is pull-mirrored into the in-clu
   Contains two jobs: `pentest:sca` (OWASP Dependency-Check SCA) and `pentest:dast`
   (authenticated ZAP DAST baseline including nuclei probes). Both jobs extend the
   centralised `.pentest-*` hidden jobs from
-  `snapdragon-generator/tests/pentest/ci/pentest-stage.gitlab-ci.yml`. Currently
+  `hugmesh-generator/tests/pentest/ci/pentest-stage.gitlab-ci.yml`. Currently
   `allow_failure: true` (report-and-fix posture, not a hard gate). Run `make pentest` to
   run the same SCA and DAST scan locally.
 
@@ -257,7 +257,7 @@ Build + test locally: `./mvnw -DskipITs test`.
 
 ## Roadmap
 
-This repo tracks the platform's tube-service slice of the wider Snapdragon roadmap. The
+This repo tracks the platform's tube-service slice of the wider HugMesh roadmap. The
 immediate, repo-local follow-ups are enumerated under
 [Roadmap / not yet in this repo](#roadmap--not-yet-in-this-repo) below. Platform-wide
 initiatives this BFF will plug into as they land: SSO-end-to-end-live (the gateway
@@ -283,7 +283,7 @@ elsewhere:
   verifies the HMAC-signed URLs this BFF issues (via a `auth_request` to
   `/bff/tube/media/verify`). The signing AND the public `/verify` `auth_request` endpoint
   are ✅ shipped here; the byte-serving sidecar that calls `/verify` is an external component.
-- 🔭 **`snapdragon-tube-ui` native-federation remote** (DB-hosted federated Angular
+- 🔭 **`hugmesh-tube-ui` native-federation remote** (DB-hosted federated Angular
   module) consuming these BFF endpoints.
 - 🔭 **Generator devops for the tube optional service** — the deployment story:
   DEFAULT-OFF / ships-dark, GPU-pinned (x86 + GPU) per-domain enable gated on a
@@ -304,27 +304,27 @@ are verified against the current code (not invented) and are consumers/producers
 is wired for but that live in a separate, not-yet-written component:
 
 - **No yt-dlp worker actually calls the claim/report seam yet.** `TubeDownloadWorkerController`
-  (`src/main/java/systems/snapdragon/tubebff/download/TubeDownloadWorkerController.java:36-104`)
-  and the `ROLE_TUBE_WORKER`-only path gate (`src/main/java/systems/snapdragon/tubebff/config/SecurityConfig.java:168`)
+  (`src/main/java/systems/hugmesh/tubebff/download/TubeDownloadWorkerController.java:36-104`)
+  and the `ROLE_TUBE_WORKER`-only path gate (`src/main/java/systems/hugmesh/tubebff/config/SecurityConfig.java:168`)
   are fully implemented and gated, but the queue only drains when an external worker
   polls `POST /bff/tube/internal/download-jobs/{claim,report}` — that CronJob/image does
   not exist in this repo (tracked above under "yt-dlp downloader runner image").
 - **No consumer of the signed media URL exists in this repo.** `TubeMediaController.sign`/
-  `verify` (`src/main/java/systems/snapdragon/tubebff/media/TubeMediaController.java:127-214`)
+  `verify` (`src/main/java/systems/hugmesh/tubebff/media/TubeMediaController.java:127-214`)
   fully implements signing + verification, but the tube-media Nginx sidecar that would call
   `GET /bff/tube/media/verify` as its `auth_request` target, and serve the actual bytes at
   `be-gateway /tube/content/**`, is external (tracked above).
 - **Admin governance surface is grant/timeout/ban/restore + storage-budget only.**
-  `TubeStorageBudgetController` (`src/main/java/systems/snapdragon/tubebff/download/TubeStorageBudgetController.java:39-80`)
+  `TubeStorageBudgetController` (`src/main/java/systems/hugmesh/tubebff/download/TubeStorageBudgetController.java:39-80`)
   exposes only a `POST` to set a user's budget — there is no `GET` to read current
   per-user budgets/usage in bulk, and no quota/retention/cadence admin endpoints exist
   anywhere under `download/` or `access/` (the PR8 wider admin surface referenced above).
-- **`DownloadJob.contentPath`** (`src/main/java/systems/snapdragon/tubebff/download/DownloadJob.java:65`)
+- **`DownloadJob.contentPath`** (`src/main/java/systems/hugmesh/tubebff/download/DownloadJob.java:65`)
   is stamped by the worker's `report` call and stored, but nothing in this repo resolves
   or serves that path — it is consumed only by the (external) tube-media sidecar.
 - **`tube_google_link.google_sub` / `google_email` are always persisted as `NULL` in
   production.** `DefaultGoogleApiClient.toTokenResponse`
-  (`src/main/java/systems/snapdragon/tubebff/google/DefaultGoogleApiClient.java:158-173`)
+  (`src/main/java/systems/hugmesh/tubebff/google/DefaultGoogleApiClient.java:158-173`)
   never decodes the token endpoint's `id_token` and never calls the Google `userinfo`
   endpoint, and no other class in this repo does either — only the `refresh_token` /
   `access_token` / `scope` fields of the OAuth token response are real. No test catches

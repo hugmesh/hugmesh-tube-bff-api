@@ -5,57 +5,57 @@
   <modelVersion>4.0.0</modelVersion>
   <!-- The org metapom — consolidates the Spring Boot 4.0.7 / Java 25 reactive BFF
        baseline (WebFlux + Casdoor OAuth2 resource server + R2DBC/Liquibase +
-       SpringDoc), the shared <dependencies>, dependencyManagement (snapdragon-commons),
+       SpringDoc), the shared <dependencies>, dependencyManagement (hugmesh-commons),
        pluginManagement (compiler / surefire bytebuddy flag / spring-boot / native) and
-       the GitLab Maven publishing wiring. snapdragon-parent is itself a child of
+       the GitLab Maven publishing wiring. hugmesh-parent is itself a child of
        spring-boot-starter-parent 4.0.7, so the Spring Boot dependency + plugin
        management is inherited TRANSITIVELY. -->
   <parent>
-    <groupId>systems.snapdragon</groupId>
-    <artifactId>snapdragon-parent</artifactId>
-    <version>2.7.0</version>
+    <groupId>systems.hugmesh</groupId>
+    <artifactId>hugmesh-parent</artifactId>
+    <version>2.8.0</version>
     <relativePath/>
   </parent>
-  <groupId>systems.snapdragon</groupId>
+  <groupId>systems.hugmesh</groupId>
   <!-- NO -api suffix in the artifactId (mirrors owncast-bff / wiki-bff / forum-bff /
        user-bff / admin-bff): -api is only in the repo/service/image name. -->
   <artifactId>tube-bff</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
   <properties>
-    <!-- java.version (25), encoding and the snapdragon-commons version are all
-         inherited from snapdragon-parent. This BFF has NO repo-specific deps beyond
+    <!-- java.version (25), encoding and the hugmesh-commons version are all
+         inherited from hugmesh-parent. This BFF has NO repo-specific deps beyond
          the shared reactive-BFF baseline, so no extra version pins here. -->
   </properties>
   <dependencies>
-    <!-- The shared, canonical Snapdragon security/tenancy/config/web building blocks
+    <!-- The shared, canonical HugMesh security/tenancy/config/web building blocks
          (Casdoor JWT authorities, issuer->domain DomainRegistry, Roles helpers, the
          config-gated multi-issuer TenancyResourceServerConfig, the static DomainScope
-         predicate util, the BFF ApiException). Version is MANAGED by snapdragon-parent's
+         predicate util, the BFF ApiException). Version is MANAGED by hugmesh-parent's
          dependencyManagement, so NO <version> here. This replaces tube-bff's deleted
          local copies of security.{Roles,CasdoorAuthorities,DomainRegistry,DomainScope},
          config.TenancyResourceServerConfig and web.ApiException. -->
     <dependency>
-      <groupId>systems.snapdragon</groupId>
-      <artifactId>snapdragon-commons</artifactId>
+      <groupId>systems.hugmesh</groupId>
+      <artifactId>hugmesh-commons</artifactId>
     </dependency>
 
     <!-- Commons test-support base classes (PostgresTestSupport Testcontainers base
          for full-context tests). An EXPLICIT <version> is required here and cannot be
          omitted: Maven keys dependencyManagement by groupId:artifactId:type:classifier,
-         so snapdragon-parent's classifier-less managed snapdragon-commons entry does NOT
+         so hugmesh-parent's classifier-less managed hugmesh-commons entry does NOT
          match this tests-classifier dependency. Omitting the version is a hard POM
          validation error ("'dependencies.dependency.version' ... is missing"), which
          made this module unbuildable. Every sibling that consumes the tests jar
          (forum/owncast/mod/admin/user/wiki-bff, auth-core, federation-api) pins it
-         explicitly for the same reason. We use the parent's ${snapdragon-commons.version}
+         explicitly for the same reason. We use the parent's ${hugmesh-commons.version}
          property (as federation-api does) so this stays locked to the SAME version the
          parent's dependencyManagement supplies for the compile-scoped dependency above;
          a hard-coded literal would silently diverge on a parent bump and put two
-         snapdragon-commons versions on the test classpath. -->
+         hugmesh-commons versions on the test classpath. -->
     <dependency>
-      <groupId>systems.snapdragon</groupId>
-      <artifactId>snapdragon-commons</artifactId>
-      <version>${snapdragon-commons.version}</version>
+      <groupId>systems.hugmesh</groupId>
+      <artifactId>hugmesh-commons</artifactId>
+      <version>${hugmesh-commons.version}</version>
       <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>
@@ -63,7 +63,7 @@
     <!-- Boot-4 module split: the WebClient.Builder auto-configuration
          (WebClientAutoConfiguration) was extracted from spring-boot-webflux into the
          standalone spring-boot-webclient module, which spring-boot-starter-webflux no
-         longer pulls transitively. This BFF is the only Snapdragon BFF with an OUTBOUND
+         longer pulls transitively. This BFF is the only HugMesh BFF with an OUTBOUND
          reactive WebClient (TubeGoogleConfig#tubeGoogleWebClient -> Google OAuth/token +
          YouTube Data API), so it must declare the module so the auto-configured
          WebClient.Builder bean is present. Version is BOM-managed (parent). -->
@@ -77,7 +77,7 @@
          oauth2-resource-server / validation), the data-access stack (data-r2dbc /
          r2dbc-postgresql / liquibase-core / spring-jdbc / postgresql), springdoc, and
          the whole test stack (spring-boot-starter-test / reactor-test /
-         spring-security-test / r2dbc-h2 / h2) are INHERITED from snapdragon-parent's
+         spring-security-test / r2dbc-h2 / h2) are INHERITED from hugmesh-parent's
          common <dependencies>. They were removed here to de-duplicate. This BFF owns
          the may-use access-governance tables (tube_access), NOT the media plane, and
          has NO repo-specific dependencies beyond the shared baseline.
@@ -85,7 +85,7 @@
   </dependencies>
   <build><plugins>
     <!-- The spring-boot, native and surefire (bytebuddy-experimental argLine)
-         plugins are configured in snapdragon-parent's pluginManagement; declaring
+         plugins are configured in hugmesh-parent's pluginManagement; declaring
          them here (no config) binds the managed config. The native plugin is bound so
          `./mvnw -Pnative native:compile` works; spring-boot repackages the app. -->
     <plugin>

@@ -1,7 +1,7 @@
 {
-  "openapi" : "3.1.0",
+  "openapi" : "3.0.1",
   "info" : {
-    "title" : "snapdragon-tube-bff-api",
+    "title" : "hugmesh-tube-bff-api",
     "description" : "Tube BFF API (/bff/tube/**) — the access governance plane for the LocalTube video optional service. PR2 owns the tube_access use/timeout/ban overlay (cloned from owncast_grant / wiki_access): DEFAULT-DENY may-use enforced at request time by TubeAccessGuard (an active use grant AND NOT an active ban, precedence ban>grant, SUPERADMIN exempt). Grant/timeout/ban/restore gated TUBE_GOVERN (admin|superadmin); list-all/history gated TUBE_MANAGE (superadmin). All surfaces are domain-scoped per multi-brand: a scoped ADMIN governs only own-brand users. The Google-connect/subs-sync, the yt-dlp downloader, and the per-domain content media serving (range/HLS) are SEPARATE components, not this BFF.",
     "version" : "0.1.0"
   },
@@ -39,7 +39,57 @@
         "operationId" : "syncSubscriptions",
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Sync complete; returns channel count UPSERTed",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SyncResult"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SyncResult"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "No tube_access grant, brand unresolvable, or reauth_required",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SyncResult"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "No live Google connection (connect first)",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SyncResult"
+                }
+              }
+            }
+          },
+          "502" : {
+            "description" : "Google API call failed",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SyncResult"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -68,7 +118,57 @@
         },
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Updated job row",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Validation failure or unknown result value",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid credentials",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Caller lacks ROLE_TUBE_WORKER",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "404" : {
+            "description" : "Job id not found",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -97,7 +197,47 @@
         },
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Claimed jobs (may be fewer than limit or empty)",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobList"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Validation failure on request body",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobList"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid credentials",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobList"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Caller lacks ROLE_TUBE_WORKER",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobList"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -116,7 +256,37 @@
         "operationId" : "googleDisconnect",
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Disconnected (or was already disconnected)",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectStatus"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectStatus"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "No active tube_access grant or brand unresolvable",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectStatus"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -135,7 +305,37 @@
         "operationId" : "listDownloadJobs",
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Job list (may be empty)",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobList"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobList"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "No active use grant or active ban",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobList"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -152,7 +352,37 @@
         "operationId" : "enqueueDownloadJobs",
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Enqueued (or existing) job list",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobList"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobList"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "No active use grant or active ban",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobList"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -181,7 +411,47 @@
         },
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Updated storage usage row",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Usage"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Validation failure (budgetBytes must be >= 0)",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Usage"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Usage"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Caller lacks ROLE_ADMIN or ROLE_SUPERADMIN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Usage"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -210,7 +480,47 @@
         },
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Timeout override created",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Validation failure (ttlSeconds must be positive)",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Caller lacks ROLE_ADMIN or ROLE_SUPERADMIN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -239,7 +549,47 @@
         },
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Grant created or already active",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Validation failure on request body",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Caller lacks ROLE_ADMIN or ROLE_SUPERADMIN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -268,7 +618,47 @@
         },
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Ban override created",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Validation failure on request body",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Caller lacks ROLE_ADMIN or ROLE_SUPERADMIN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Access"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -287,7 +677,37 @@
         "operationId" : "listActiveUseAccess",
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Active override list",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccessList"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccessList"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Caller lacks ROLE_SUPERADMIN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccessList"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -314,7 +734,37 @@
         } ],
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "History list (may be empty)",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccessList"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccessList"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Caller lacks ROLE_SUPERADMIN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccessList"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -333,7 +783,37 @@
         "operationId" : "listSubscriptions",
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "List of subscribed channels (may be empty if not yet synced)",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SubscriptionList"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SubscriptionList"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "No active tube_access grant or brand unresolvable",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SubscriptionList"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -408,7 +888,47 @@
         } ],
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Signed media URL and its expiry",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SignedUrl"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Path fails allowlist validation (possible traversal attempt)",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SignedUrl"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SignedUrl"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "No tube_access use grant, active ban, or path owner != caller",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SignedUrl"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -427,7 +947,37 @@
         "operationId" : "googleConnectStatus",
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Connection status (connected or not)",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectStatus"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectStatus"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "No active tube_access grant, active ban, or brand unresolvable",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectStatus"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -461,7 +1011,57 @@
         } ],
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Connection established; display-safe status returned",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectStatus"
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "Missing or blank authorization code",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectStatus"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectStatus"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Invalid/expired/cross-principal state, or no active tube_access grant",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectStatus"
+                }
+              }
+            }
+          },
+          "502" : {
+            "description" : "Google token exchange failed",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConnectStatus"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -480,7 +1080,37 @@
         "operationId" : "googleAuthorizeUrl",
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "The Google consent URL",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AuthorizeUrl"
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AuthorizeUrl"
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "No active tube_access grant or brand unresolvable",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AuthorizeUrl"
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
             "content" : {
               "application/json" : {
                 "schema" : {
@@ -514,12 +1144,66 @@
         } ],
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Override revoked (or no active override — no-op)",
             "content" : {
               "application/json" : {
                 "schema" : {
                   "type" : "object",
-                  "additionalProperties" : { }
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            }
+          },
+          "400" : {
+            "description" : "accessType must be 'use' or 'banned'",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            }
+          },
+          "401" : {
+            "description" : "Missing or invalid JWT",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            }
+          },
+          "403" : {
+            "description" : "Caller lacks ROLE_ADMIN or ROLE_SUPERADMIN",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
+                }
+              }
+            }
+          },
+          "500" : {
+            "description" : "Unexpected server error",
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "object",
+                  "additionalProperties" : {
+                    "type" : "object"
+                  }
                 }
               }
             }
@@ -540,6 +1224,7 @@
         }
       },
       "ReportRequest" : {
+        "required" : [ "jobId", "result", "workerId" ],
         "type" : "object",
         "properties" : {
           "jobId" : {
@@ -547,9 +1232,9 @@
             "type" : "string"
           },
           "workerId" : {
-            "type" : "string",
             "maxLength" : 255,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           },
           "result" : {
             "minLength" : 1,
@@ -560,17 +1245,16 @@
             "format" : "int64"
           },
           "contentPath" : {
-            "type" : "string",
             "maxLength" : 2048,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           },
           "error" : {
-            "type" : "string",
             "maxLength" : 2048,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           }
-        },
-        "required" : [ "jobId", "result", "workerId" ]
+        }
       },
       "Job" : {
         "type" : "object",
@@ -628,20 +1312,20 @@
         }
       },
       "ClaimRequest" : {
+        "required" : [ "workerId" ],
         "type" : "object",
         "properties" : {
           "workerId" : {
-            "type" : "string",
             "maxLength" : 255,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           },
           "limit" : {
+            "minimum" : 1,
             "type" : "integer",
-            "format" : "int32",
-            "minimum" : 1
+            "format" : "int32"
           }
-        },
-        "required" : [ "workerId" ]
+        }
       },
       "JobList" : {
         "type" : "object",
@@ -676,20 +1360,20 @@
         }
       },
       "BudgetRequest" : {
+        "required" : [ "userSubject" ],
         "type" : "object",
         "properties" : {
           "userSubject" : {
-            "type" : "string",
             "maxLength" : 400,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           },
           "budgetBytes" : {
+            "minimum" : 0,
             "type" : "integer",
-            "format" : "int64",
-            "minimum" : 0
+            "format" : "int64"
           }
-        },
-        "required" : [ "userSubject" ]
+        }
       },
       "Usage" : {
         "type" : "object",
@@ -715,24 +1399,24 @@
         }
       },
       "Timeout" : {
+        "required" : [ "userSubject" ],
         "type" : "object",
         "properties" : {
           "userSubject" : {
-            "type" : "string",
             "maxLength" : 400,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           },
           "ttlSeconds" : {
             "type" : "integer",
             "format" : "int64"
           },
           "reason" : {
-            "type" : "string",
             "maxLength" : 1024,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           }
-        },
-        "required" : [ "userSubject" ]
+        }
       },
       "Access" : {
         "type" : "object",
@@ -773,20 +1457,20 @@
         }
       },
       "GrantOrBan" : {
+        "required" : [ "userSubject" ],
         "type" : "object",
         "properties" : {
           "userSubject" : {
-            "type" : "string",
             "maxLength" : 400,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           },
           "reason" : {
-            "type" : "string",
             "maxLength" : 1024,
-            "minLength" : 0
+            "minLength" : 0,
+            "type" : "string"
           }
-        },
-        "required" : [ "userSubject" ]
+        }
       },
       "AccessList" : {
         "type" : "object",
