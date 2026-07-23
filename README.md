@@ -18,10 +18,12 @@ As of 2026-06-24 this BFF sits on the unified HugMesh ecosystem baseline:
 - **Spring Boot 4.0.7 / Spring Cloud 2025.1.2, Java 25 LTS, WebFlux reactive.** The build is
   a child of the org metapom **`hugmesh-parent` 2.8.0** (which itself rides Boot 4), so
   the reactive-BFF dependency + plugin baseline is inherited, not duplicated here.
-- **Shared security/tenancy via `hugmesh-commons` 2.7.0** (`systems.hugmesh.commons.*`).
+- **Shared security/tenancy via `hugmesh-commons` 2.1.0** (`systems.hugmesh.commons.*`).
   This BFF's former local copies of `security.{Roles,CasdoorAuthorities,DomainRegistry,DomainScope}`,
   `config.TenancyResourceServerConfig` and `web.ApiException` were deleted and now come
-  from commons (version managed by the parent). This BFF does **not** depend on
+  from commons — version pinned via `hugmesh-parent`'s `${hugmesh-commons.version}`
+  property (2.1.0), which is independent of the parent's own 2.8.0 version number. This
+  BFF does **not** depend on
   `hugmesh-auth-core` — that artifact carries account/session/MFA/Casdoor-admin infra
   and is consumed only by `user-bff` + `admin-bff`; tube-bff owns no login/session/account
   surface (it only connects Google for `youtube.readonly` on behalf of an
