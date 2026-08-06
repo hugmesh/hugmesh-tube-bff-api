@@ -41,6 +41,19 @@ As of 2026-06-24 this BFF sits on the unified HugMesh ecosystem baseline:
   JDBC datasource; runtime is R2DBC) — no raw SQL strings / inline `@Query`.
 - **CI is GitLab** (`.gitlab-ci.yml`); there are **no** GitHub Actions. The GitHub repo is
   pull-mirrored into in-cluster GitLab.
+- **API↔API mTLS (server side) is already wired.** `server.ssl.*` is disabled by default
+  (`SSL_ENABLED=false`, `SSL_CLIENT_AUTH=none`) so local/dev/CI run plaintext. In-cluster,
+  the deployment mounts a PKCS12 keystore (this service's Vault-PKI-issued identity) +
+  truststore (cluster CA) and sets `SSL_ENABLED=true` / `SSL_CLIENT_AUTH=need` with a
+  TLSv1.3 floor, so the listener requires a client cert chaining to the cluster CA. (This
+  is the listener side of the story; `ROLE_TUBE_WORKER` below is the future yt-dlp
+  caller's own mTLS-principal identity — complementary wiring, not the same thing.)
+- **GraalVM native-image build is wired.** The `native` Maven profile +
+  `org.graalvm.buildtools:native-maven-plugin` are configured
+  (`./mvnw -Pnative native:compile`), and `config.NativeHintsConfig` registers
+  reflection/resource AOT hints for the DTOs, the JPA/R2DBC entities, and the springdoc
+  Swagger UI webjar assets — mirrors `owncast-bff` / `wiki-bff` / `forum-bff` / `user-bff`
+  / `federation-api`.
 
 Functionally, everything in [Capabilities](#capabilities-what-is-on-main) (the access
 overlay, Google OAuth connect, download queue, signed media URLs + the GitLab pentest stage)
@@ -255,7 +268,9 @@ CI = GitLab (`.gitlab-ci.yml`). The GitHub repo is pull-mirrored into the in-clu
 > k6 load testing is part of the platform pen-test standard but is not wired into THIS
 > repo's pipeline yet (SCA + DAST baseline are).
 
-Build + test locally: `./mvnw -DskipITs test`.
+Build + test locally: `./mvnw -DskipITs test`. A `native` Maven profile is also wired
+(`./mvnw -Pnative native:compile` — GraalVM binary, needs a GraalVM host); AOT
+reachability hints live in `config.NativeHintsConfig`.
 
 ## Roadmap
 
@@ -264,11 +279,14 @@ immediate, repo-local follow-ups are enumerated under
 [Roadmap / not yet in this repo](#roadmap--not-yet-in-this-repo) below. Platform-wide
 initiatives this BFF will plug into as they land: SSO-end-to-end-live (the gateway
 `bff_`-session exchange this BFF already sits behind), MFA / step-up for privileged tube
-governance ops, encrypted versioned backups of the tube data + content PVC, per-node
-attached storage for the GPU host that runs the byte plane, and the multi-tenancy
-superadmin (per-domain enable of the tube optional service). A/V-adjacent media remains
-LAN-only until the platform TURN/SFU work lands; tube serves owner-private archived bytes,
-not live A/V.
+governance ops (the `SecurityConfig` MFA-authority-converter parity —
+`app.mfa.enabled` / `mfa.freshness-window` → `CasdoorAuthorities.MfaConfig` — already
+ships here from the platform-wide `d6d8` fan-out, dark/OFF by default; no route in this
+repo gates on the resulting `MFA_SATISFIED` authority yet), encrypted versioned backups
+of the tube data + content PVC, per-node attached storage for the GPU host that runs the
+byte plane, and the multi-tenancy superadmin (per-domain enable of the tube optional
+service). A/V-adjacent media remains LAN-only until the platform TURN/SFU work lands;
+tube serves owner-private archived bytes, not live A/V.
 
 ## Roadmap / not yet in this repo
 
