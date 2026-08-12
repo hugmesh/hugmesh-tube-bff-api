@@ -10,7 +10,7 @@
 # repo; the thin pentest:* jobs below just `extends:` those. See memory
 # hugmesh-pentest-standard / hugmesh-nuclei-integration.
 include:
-  - project: 'Snapdragon-Systems/hugmesh-generator'
+  - project: 'hugmesh/hugmesh-generator'
     ref: main
     file: '/tests/pentest/ci/pentest-stage.gitlab-ci.yml'
 
