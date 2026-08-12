@@ -67,7 +67,7 @@ springdoc:
     path: /swagger-ui.html
   # Restrict the component scan to this BFF's own controllers so the spec stays the
   # tube-BFF surface only (no stray springframework/actuator paths leak in).
-  packages-to-scan: systems.hugmesh.tubebff
+  packages-to-scan: net.hugmesh.tubebff
 
 # Tube download work-queue (PR4) tunables. The default per-user storage budget seeded
 # onto a new tube_storage_usage accounting row (bytes); an admin may raise/lower it per

@@ -16,7 +16,7 @@
     <version>2.8.0</version>
     <relativePath/>
   </parent>
-  <groupId>systems.hugmesh</groupId>
+  <groupId>net.hugmesh</groupId>
   <!-- NO -api suffix in the artifactId (mirrors owncast-bff / wiki-bff / forum-bff /
        user-bff / admin-bff): -api is only in the repo/service/image name. -->
   <artifactId>tube-bff</artifactId>
@@ -35,7 +35,7 @@
          local copies of security.{Roles,CasdoorAuthorities,DomainRegistry,DomainScope},
          config.TenancyResourceServerConfig and web.ApiException. -->
     <dependency>
-      <groupId>systems.hugmesh</groupId>
+      <groupId>net.hugmesh</groupId>
       <artifactId>hugmesh-commons</artifactId>
     </dependency>
 
@@ -53,7 +53,7 @@
          a hard-coded literal would silently diverge on a parent bump and put two
          hugmesh-commons versions on the test classpath. -->
     <dependency>
-      <groupId>systems.hugmesh</groupId>
+      <groupId>net.hugmesh</groupId>
       <artifactId>hugmesh-commons</artifactId>
       <version>${hugmesh-commons.version}</version>
       <classifier>tests</classifier>
