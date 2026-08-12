@@ -21,7 +21,7 @@ PENTEST_SCA_CVSS ?= 9
 # Where the shared DAST harness lives. Defaults to a sibling generator checkout;
 # override PENTEST_HARNESS_DIR to point at a vendored / cloned harness.
 PENTEST_HARNESS_DIR ?= ../hugmesh-generator/tests/pentest
-PENTEST_HARNESS_REPO ?= https://github.com/hugmesh-net/hugmesh-generator.git
+PENTEST_HARNESS_REPO ?= https://github.com/hugmesh/hugmesh-generator.git
 
 .PHONY: pentest pentest-sca pentest-dast
 
