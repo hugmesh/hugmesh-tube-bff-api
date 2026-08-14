@@ -5,7 +5,7 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: "${CASDOOR_ISSUER_URI:https://id.snapdragon.systems}"
+          issuer-uri: "${CASDOOR_ISSUER_URI:https://id.hugmesh.net}"
           # Explicit JWKS so the resource server does NOT do OIDC discovery against
           # issuer-uri. On the local compose stack the issuer is the PUBLISHED
           # http://localhost:8000 (what the browser token carries in `iss`), but
@@ -15,14 +15,14 @@ spring:
           # the logs. mod-bff hit and documented this first; this BFF never copied
           # the fix. iss is still validated via issuer-uri. Compose supplies
           # CASDOOR_JWKS_URI=http://casdoor:8000/.well-known/jwks.
-          jwk-set-uri: "${CASDOOR_JWKS_URI:${CASDOOR_ISSUER_URI:https://id.snapdragon.systems}/.well-known/jwks}"
+          jwk-set-uri: "${CASDOOR_JWKS_URI:${CASDOOR_ISSUER_URI:https://id.hugmesh.net}/.well-known/jwks}"
 
   # Runtime data access is REACTIVE (R2DBC) over the tube-bff governance store: the
   # tube_access use grant/timeout/ban overlay (PR2) + the tube_download_job work queue +
   # tube_storage_usage budgets + tube_subscription enqueue source (PR4). The
   # tube_google_link table arrives with the Google-connect path.
   r2dbc:
-    url: "${SPRING_R2DBC_URL:r2dbc:postgresql://tube-bff-db.snapdragon-backend.svc.cluster.local:5432/tubebff}"
+    url: "${SPRING_R2DBC_URL:r2dbc:postgresql://tube-bff-db.hugmesh-backend.svc.cluster.local:5432/tubebff}"
     username: "${SPRING_R2DBC_USERNAME:tubebff}"
     password: "${SPRING_R2DBC_PASSWORD:}"
 
@@ -31,7 +31,7 @@ spring:
   liquibase:
     enabled: true
     change-log: "classpath:db/changelog/db.changelog-master.xml"
-    url: "${SPRING_LIQUIBASE_URL:jdbc:postgresql://tube-bff-db.snapdragon-backend.svc.cluster.local:5432/tubebff}"
+    url: "${SPRING_LIQUIBASE_URL:jdbc:postgresql://tube-bff-db.hugmesh-backend.svc.cluster.local:5432/tubebff}"
     user: "${SPRING_LIQUIBASE_USER:tubebff}"
     password: "${SPRING_LIQUIBASE_PASSWORD:}"
 
