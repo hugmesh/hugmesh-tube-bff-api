@@ -3,6 +3,8 @@ package net.hugmesh.tubebff.google;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -80,7 +82,20 @@ public final class TubeGoogleDto {
 
     /** List-response wrapper for {@code GET /bff/tube/subscriptions}. */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record SubscriptionList(List<Subscription> subscriptions) {}
+    public record SubscriptionList(List<Subscription> subscriptions) {
+
+        /** Defensive, unmodifiable copy on the way in; null stays null (never turned into an NPE). */
+        public SubscriptionList {
+            subscriptions = subscriptions == null ? null
+                    : Collections.unmodifiableList(new ArrayList<>(subscriptions));
+        }
+
+        /** Unmodifiable view; the record never hands out its backing list. */
+        @Override
+        public List<Subscription> subscriptions() {
+            return subscriptions == null ? null : Collections.unmodifiableList(subscriptions);
+        }
+    }
 
     /** Sync result — the number of channels UPSERTed in this sync cycle. */
     @JsonIgnoreProperties(ignoreUnknown = true)

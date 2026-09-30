@@ -1,5 +1,6 @@
 package net.hugmesh.tubebff.access;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
@@ -79,6 +80,10 @@ import java.util.List;
  * @see net.hugmesh.tubebff.security.PrincipalDomain
  */
 @Component
+@SuppressFBWarnings(value = "EI_EXPOSE_REP2",
+        justification = "Spring constructor injection: TubeAccessRepository and PrincipalDomain are "
+                + "container-owned singleton collaborators that are never mutated after construction; "
+                + "a defensive copy of a bean is meaningless (not caller-owned mutable data).")
 public class TubeAccessGuard {
 
     private final TubeAccessRepository repo;

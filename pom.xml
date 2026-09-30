@@ -23,8 +23,9 @@
   <version>0.2.0</version>
   <properties>
     <!-- java.version (25), encoding and the hugmesh-commons version are all
-         inherited from hugmesh-parent. This BFF has NO repo-specific deps beyond
-         the shared reactive-BFF baseline, so no extra version pins here. -->
+         inherited from hugmesh-parent. This BFF has NO repo-specific RUNTIME deps
+         beyond the shared reactive-BFF baseline, so no extra runtime version pins here
+         (the one pin is the compile-time-only spotbugs-annotations, see below). -->
   </properties>
   <dependencies>
     <!-- The shared, canonical HugMesh security/tenancy/config/web building blocks
@@ -72,6 +73,19 @@
       <artifactId>spring-boot-webclient</artifactId>
     </dependency>
 
+    <!-- Compile-time only (CLASS retention, absent from the runtime/native image): the
+         @SuppressFBWarnings annotation for the one justified EI_EXPOSE_REP2 constructor
+         injection site (TubeAccessGuard). Pinned to the spotbugs-maven-plugin's own
+         SpotBugs version (hugmesh-parent: spotbugs-maven-plugin 4.9.8.2 -> SpotBugs 4.9.8).
+         A repo-local excludeFilterFiles entry does NOT work: the plugin passes each filter
+         as a separate -exclude and SpotBugs honours only one. -->
+    <dependency>
+      <groupId>com.github.spotbugs</groupId>
+      <artifactId>spotbugs-annotations</artifactId>
+      <version>4.9.8</version>
+      <scope>provided</scope>
+    </dependency>
+
     <!-- ============================================================================
          The core reactive BFF stack (webflux / actuator / security /
          oauth2-resource-server / validation), the data-access stack (data-r2dbc /
@@ -80,7 +94,8 @@
          spring-security-test / r2dbc-h2 / h2) are INHERITED from hugmesh-parent's
          common <dependencies>. They were removed here to de-duplicate. This BFF owns
          the may-use access-governance tables (tube_access), NOT the media plane, and
-         has NO repo-specific dependencies beyond the shared baseline.
+         has NO repo-specific RUNTIME dependencies beyond the shared baseline (the
+         provided-scope spotbugs-annotations above is compile-time only).
          ============================================================================ -->
   </dependencies>
   <build><plugins>

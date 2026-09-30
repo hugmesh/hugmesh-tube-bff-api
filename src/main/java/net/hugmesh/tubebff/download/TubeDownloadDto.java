@@ -6,6 +6,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -63,7 +65,19 @@ public final class TubeDownloadDto {
      * List-response wrapper for {@code GET /downloads} and {@code POST /downloads}.
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record JobList(List<Job> jobs) {}
+    public record JobList(List<Job> jobs) {
+
+        /** Defensive, unmodifiable copy on the way in; null stays null (never turned into an NPE). */
+        public JobList {
+            jobs = jobs == null ? null : Collections.unmodifiableList(new ArrayList<>(jobs));
+        }
+
+        /** Unmodifiable view; the record never hands out its backing list. */
+        @Override
+        public List<Job> jobs() {
+            return jobs == null ? null : Collections.unmodifiableList(jobs);
+        }
+    }
 
     // ── internal worker bodies ─────────────────────────────────────────────────
 
