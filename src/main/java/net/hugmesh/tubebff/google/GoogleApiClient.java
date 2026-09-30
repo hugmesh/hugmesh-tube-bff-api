@@ -2,6 +2,8 @@ package net.hugmesh.tubebff.google;
 
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -89,5 +91,17 @@ public interface GoogleApiClient {
      * Walk pages by passing {@code nextPageToken} back to {@link #listSubscriptions} until
      * it is {@code null}.
      */
-    record SubscriptionsPage(List<Subscription> items, String nextPageToken) {}
+    record SubscriptionsPage(List<Subscription> items, String nextPageToken) {
+
+        /** Defensive, unmodifiable copy on the way in; null stays null (never turned into an NPE). */
+        public SubscriptionsPage {
+            items = items == null ? null : Collections.unmodifiableList(new ArrayList<>(items));
+        }
+
+        /** Unmodifiable view; the record never hands out its backing list. */
+        @Override
+        public List<Subscription> items() {
+            return items == null ? null : Collections.unmodifiableList(items);
+        }
+    }
 }
