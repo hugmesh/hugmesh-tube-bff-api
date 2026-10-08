@@ -13,7 +13,7 @@ in-platform viewing). Twin of `hugmesh-owncast-bff-api` / `hugmesh-wiki-bff-api`
 
 ## Current State
 
-As of 2026-06-24 this BFF sits on the unified HugMesh ecosystem baseline:
+As of commit `7770e96` (2026-10-07) this BFF sits on the unified HugMesh ecosystem baseline:
 
 - **Spring Boot 4.0.7 / Spring Cloud 2025.1.2, Java 25 LTS, WebFlux reactive.** The build is
   a child of the org metapom **`hugmesh-parent` 2.8.0** (which itself rides Boot 4), so
@@ -38,28 +38,37 @@ As of 2026-06-24 this BFF sits on the unified HugMesh ecosystem baseline:
   `gateway_route_access` table; the base `ROLE_TUBE` row is the route-access floor before
   any handler here runs.
 - **Data access** is Spring Data R2DBC reactive repositories (Liquibase migrates over a
-  JDBC datasource; runtime is R2DBC) — no raw SQL strings / inline `@Query`.
-- **CI is GitLab** (`.gitlab-ci.yml`); there are **no** GitHub Actions. The GitHub repo is
-  pull-mirrored into in-cluster GitLab.
+  JDBC datasource; runtime is R2DBC): derived finders, plus constant-string `@Query`
+  methods for the guarded compare-and-set updates and the `RETURNING id` inserts
+  (`TubeAccessR2dbcRepository`, `DownloadJobR2dbcRepository`). There is no `DatabaseClient`
+  raw SQL.
+- **CI is GitLab** (`.gitlab-ci.yml`). This repo has **no** GitHub Actions workflow (the
+  Actions API lists none). The GitHub repo is pull-mirrored into in-cluster GitLab. The
+  `Dockerfile` can also resolve the `net.hugmesh` dependencies from GitHub Packages; see
+  [CI](#ci).
 - **API↔API mTLS (server side) is already wired.** `server.ssl.*` is disabled by default
   (`SSL_ENABLED=false`, `SSL_CLIENT_AUTH=none`) so local/dev/CI run plaintext. In-cluster,
-  the deployment mounts a PKCS12 keystore (this service's Vault-PKI-issued identity) +
-  truststore (cluster CA) and sets `SSL_ENABLED=true` / `SSL_CLIENT_AUTH=need` with a
-  TLSv1.3 floor, so the listener requires a client cert chaining to the cluster CA. (This
-  is the listener side of the story; `ROLE_TUBE_WORKER` below is the future yt-dlp
-  caller's own mTLS-principal identity — complementary wiring, not the same thing.)
+  a deployment turns it on by mounting a PKCS12 keystore (this service's Vault-PKI-issued
+  identity) + truststore (cluster CA) and setting `SSL_ENABLED=true` /
+  `SSL_CLIENT_AUTH=need` (TLSv1.3 floor by default), so the listener requires a client cert
+  chaining to the cluster CA. The tube Deployment in `hugmesh-generator`
+  (`specs/cluster/manifests/tube/deployment.yaml`) sets none of these variables and mounts
+  no stores, so in-cluster tube-bff listens in plaintext today; the media sidecar calls it
+  on `127.0.0.1:8080`. (This is the listener side of the story; `ROLE_TUBE_WORKER` below is
+  the future yt-dlp caller's own mTLS-principal identity — complementary wiring, not the
+  same thing.)
 - **GraalVM native-image build is wired.** The `native` Maven profile +
   `org.graalvm.buildtools:native-maven-plugin` are configured
   (`./mvnw -Pnative native:compile`), and `config.NativeHintsConfig` registers
-  reflection/resource AOT hints for the DTOs, the JPA/R2DBC entities, and the springdoc
+  reflection/resource AOT hints for the DTOs, the R2DBC entities, and the springdoc
   Swagger UI webjar assets — mirrors `owncast-bff` / `wiki-bff` / `forum-bff` / `user-bff`
   / `federation-api`.
 
 Functionally, everything in [Capabilities](#capabilities-what-is-on-main) (the access
 overlay, Google OAuth connect, download queue, signed media URLs + the GitLab pentest stage)
-is ✅ shipped on `main`; the byte plane (tube-media sidecar), the yt-dlp runner, the
-tube-ui remote and the wider admin quota/retention surface remain 🔭 external / planned
-(see below).
+is ✅ shipped on `main`. The tube-media sidecar, the `be-gateway` route and the tube-ui
+remote exist in other repos (see [Roadmap / not yet in this repo](#roadmap--not-yet-in-this-repo)).
+The yt-dlp runner and the wider admin quota/retention surface are 🔭 not built.
 
 ## What this BFF owns
 
@@ -78,11 +87,13 @@ media bytes and does NOT run yt-dlp. Concretely, on `main` today this BFF owns:
   byte fetch. The owner two-wall (the check that the path's `sub` and domain match the
   caller's JWT claims) is enforced here before any URL is issued.
 
-The media **bytes** are served by a separate per-domain tube-media Nginx sidecar
-(🔭 not in this repo) behind a `be-gateway /tube/content/**` route. The yt-dlp runner
-image and the polling CronJob that drain the work-queue are also external (🔭 not in this
-repo) — see [Roadmap](#roadmap--not-yet-in-this-repo). What lives HERE are the queue,
-claim/report, and signed-URL **control** surfaces — not the byte plane or the downloader.
+The media **bytes** are served by a separate tube-media Nginx sidecar behind a
+`be-gateway /tube/content/**` route. Both are defined in `hugmesh-generator`, not in this
+repo (the sidecar is a container in the tube pod, on an `emptyDir` content volume). The
+yt-dlp runner image and the polling CronJob that drain the work-queue exist nowhere yet
+(🔭 not built) — see [Roadmap](#roadmap--not-yet-in-this-repo). What lives HERE are the
+queue, claim/report, and signed-URL **control** surfaces — not the byte plane or the
+downloader.
 
 ### Request flows
 
@@ -108,19 +119,22 @@ flowchart LR
     fe["fe-gateway<br/>/bff/tube/media/sign"]
     bff["tube-bff (this repo)<br/>owner two-wall + HMAC sign"]
     be["be-gateway<br/>/tube/content/**"]
-    sidecar["tube-media Nginx sidecar<br/>(per-domain content PVC)<br/>verifies HMAC / exp / sub / domain"]
+    sidecar["tube-media Nginx sidecar<br/>(content volume)<br/>verifies HMAC / exp / sub / domain"]
 
     browser -->|"1: GET /bff/tube/media/sign?path=..."| fe --> bff
     bff -.->|"returns signed<br/>/tube/content/&lt;domain&gt;/&lt;subject&gt;/...<br/>?sig=&amp;exp=&amp;sub=&amp;domain="| browser
     browser -->|"2: GET /tube/content/... (range/HLS)"| be --> sidecar
 
-    classDef planned stroke-dasharray:4 3
-    class be,sidecar planned
+    classDef external stroke-dasharray:4 3
+    class be,sidecar external
 ```
 
 > Nodes drawn with a dashed border (`be-gateway /tube/content` route + the tube-media
-> sidecar) are 🔭 **planned** — not in this repo. The signing hop (`/bff/tube/media/sign`)
-> is ✅ shipped here.
+> sidecar) are **external** — defined in `hugmesh-generator`
+> (`specs/cluster/manifests/tube/deployment.yaml`, route-access row in
+> `specs/cluster/manifests/route-access/initdb/20-schema.sql`), not in this repo. The
+> signing hop (`/bff/tube/media/sign`) and the `/verify` endpoint the sidecar calls are
+> ✅ shipped here.
 
 ## Capabilities (what is on `main`)
 
@@ -134,9 +148,10 @@ flowchart LR
 
 ## API surface (route groups)
 
-All routes are mounted under `/bff/tube` and are only reachable through the `fe-gateway`.
-The gateway enforces `ROLE_TUBE` route-access as a floor check before any handler in this
-BFF runs.
+All routes are mounted under `/bff/tube`. Browsers reach them through the `fe-gateway`,
+which enforces `ROLE_TUBE` route-access (row `/bff/tube/**`) as a floor check before any
+handler in this BFF runs. The one exception in practice is `/media/verify`, which the
+sidecar calls inside the pod.
 
 **Access governance** — `access/TubeAccessController`
 - `POST /bff/tube/admin/access/grant` · `.../timeout` · `.../ban` (ADMIN | SUPERADMIN, own-brand)
@@ -147,24 +162,27 @@ BFF runs.
 **Google connect + subscriptions** — `google/GoogleConnectController`, `google/TubeSubscriptionsController`
 - `GET /bff/tube/google-connect/{status,authorize,callback}` · `POST /bff/tube/google-connect/disconnect`
 - `GET /bff/tube/subscriptions` · `POST /bff/tube/subscriptions/sync`
-  (authenticated + a live `use` grant; SUPERADMIN exempt)
+  (`ROLE_TUBE` path gate + a live `use` grant; SUPERADMIN exempt from the grant check)
 
 **Media signing** — `media/TubeMediaController`
-- `GET /bff/tube/media/sign` — authenticated; owner two-wall (path `sub` must equal the
-  caller's JWT subject and brand) → returns a signed `/tube/content/<domain>/<subject>/...`
-  URL + `expiresAt`
+- `GET /bff/tube/media/sign` — authenticated + a live `use` grant (checked first); owner
+  two-wall (path `sub` must equal the caller's JWT subject and brand) → returns a signed
+  `/tube/content/<domain>/<subject>/...` URL + `expiresAt` (TTL 5 minutes). `400` for a
+  malformed path, `403` for no grant or a path that is not the caller's
 - `GET /bff/tube/media/verify` — **PUBLIC** (`permitAll`), the tube-media nginx sidecar's
   `auth_request` target; carries NO JWT (the HMAC signature minted by `/sign` is the sole
   credential). Fail-closed + non-leaking: `200` only for a valid, unexpired signature over
   the exact `(sub, domain, path, exp)` tuple, `403` (empty body) for every other case
 
 **Downloads + budgets** — `download/TubeDownloadController`, `download/TubeDownloadWorkerController`, `download/TubeStorageBudgetController`
-- `GET /bff/tube/downloads` · `POST /bff/tube/downloads` — authenticated (owner-scoped enqueue/list)
+- `GET /bff/tube/downloads` · `POST /bff/tube/downloads` — authenticated + a live `use`
+  grant (owner-scoped enqueue/list)
 - `POST /bff/tube/internal/download-jobs/{claim,report}` — **`ROLE_TUBE_WORKER` only**.
   This role belongs to a service/mTLS principal (the future yt-dlp CronJob). It is
   deliberately outside the human role hierarchy: no USER, MOD, ADMIN, or SUPERADMIN can
   reach these endpoints.
-- `POST /bff/tube/admin/storage-budget` — set a user's storage budget cap (ADMIN | SUPERADMIN, own-brand)
+- `POST /bff/tube/admin/storage-budget` — set a user's storage budget cap (ADMIN | SUPERADMIN,
+  own-brand; a SUPERADMIN is pinned to the default domain on this endpoint)
 
 ## The `tube_access` overlay + `TubeAccessGuard`
 
@@ -206,8 +224,10 @@ flowchart TB
 
 ## Role model
 
-- **SUPERADMIN** — `TUBE_MANAGE`; service enable per-domain (+GPU-node check);
-  cross-domain; exempt from ban.
+- **SUPERADMIN** — `TUBE_MANAGE` (list all access rows + history); cross-domain; exempt
+  from ban. 🔭 Per-domain service enable with a GPU-node check is not built: tube is a
+  build-time optional service, default off (`hugmesh-generator`
+  `specs/cluster/optional-services.yaml`, `gate: build-time`).
 - **ADMIN (own brand)** — `TUBE_GOVERN`: grant/timeout/ban/restore may-use + set storage
   budgets (✅). The wider quota / retention / allow-deny-users / cadence admin surface is
   🔭 planned (see [Roadmap](#roadmap--not-yet-in-this-repo)) — only the storage-budget `POST` is shipped today.
@@ -245,25 +265,35 @@ schema is grant-and-queue-only. The list below mirrors the comment block in
   `tube_access` / `tube_download_job` / `tube_google_link` / `tube_subscription` from
   app-minted (`UUID.randomUUID().toString()`) to DB-generated column DEFAULTs
   (`(gen_random_uuid())::text`, with `pgcrypto` installed defensively); inserts omit `id`
-  and read it back via `RETURNING id` (adopts the mod-bff #36 / admin-bff #133 pattern, PR #23).
+  and read it back via `RETURNING id` (adopts the mod-bff #36 / admin-bff #133 pattern;
+  commit `3cb3c68`).
 
 ## CI
 
 CI = GitLab (`.gitlab-ci.yml`). The GitHub repo is pull-mirrored into the in-cluster GitLab
 (`mirror_trigger_builds=true`), so the pipeline runs on push and mirror-sync. Stages:
 
-- **`test:unit`** — runs `./mvnw -B -DskipITs test` (unit and slice tests). A failure here
+- **`test:unit`** — runs `./mvnw -B -s settings.xml -DskipITs test` (unit and slice tests,
+  with a `docker:27-dind` service because the full-context tests start Postgres through
+  Testcontainers), then `git diff --exit-code`: the job fails if a test rewrote a
+  committed file such as `src/main/resources/openapi/openapi.json`. A failure here
   blocks image build, preventing a broken overlay or guard from shipping.
-- **`build:image`** — builds and pushes the container image on the privileged x86 runner.
-  Each image gets an immutable SHA tag and a moving branch tag. Images carry no embedded
-  keys.
+- **`build:image`** — runs on the default branch and on tags only. Builds and pushes the
+  container image on the privileged x86 runner. Each image gets an immutable tag (the
+  release tag, else the short SHA) and a moving branch tag. Images carry no embedded
+  keys. The `Dockerfile` has two registry paths: with the BuildKit secret `ci_job_token`
+  it resolves `hugmesh-commons` from the GitLab group registry (`settings.xml`); with
+  the secret `packages_read_token` it uses GitHub Packages
+  (`.github/maven-ci-settings.xml`). `ReleaseImageGuardTest` pins both.
 - **`pentest`** — ✅ the continuous-OWASP stage per the platform pen-test standard.
   Contains two jobs: `pentest:sca` (OWASP Dependency-Check SCA) and `pentest:dast`
   (authenticated ZAP DAST baseline including nuclei probes). Both jobs extend the
   centralised `.pentest-*` hidden jobs from
   `hugmesh-generator/tests/pentest/ci/pentest-stage.gitlab-ci.yml`. Currently
-  `allow_failure: true` (report-and-fix posture, not a hard gate). Run `make pentest` to
-  run the same SCA and DAST scan locally.
+  `allow_failure: true` (report-and-fix posture, not a hard gate). `make pentest`
+  mirrors them locally: SCA with a looser CVSS gate (9, override with
+  `PENTEST_SCA_CVSS`; CI uses 7), and DAST only when `DAST_TARGET_URL` is set (it skips
+  otherwise).
 
 > k6 load testing is part of the platform pen-test standard but is not wired into THIS
 > repo's pipeline yet (SCA + DAST baseline are).
@@ -277,10 +307,9 @@ reachability hints live in `config.NativeHintsConfig`.
 This repo tracks the platform's tube-service slice of the wider HugMesh roadmap. The
 immediate, repo-local follow-ups are enumerated under
 [Roadmap / not yet in this repo](#roadmap--not-yet-in-this-repo) below. Platform-wide
-initiatives this BFF will plug into as they land: SSO-end-to-end-live (the gateway
-`bff_`-session exchange this BFF already sits behind), MFA / step-up for privileged tube
-governance ops (the `SecurityConfig` MFA-authority-converter parity —
-`app.mfa.enabled` / `mfa.freshness-window` → `CasdoorAuthorities.MfaConfig` — already
+initiatives this BFF will plug into as they land: MFA / step-up for privileged
+tube governance ops (the `SecurityConfig` MFA-authority-converter parity —
+`app.mfa.enabled` / `app.mfa.freshness-window` → `CasdoorAuthorities.MfaConfig` — already
 ships here from the platform-wide `d6d8` fan-out, dark/OFF by default; no route in this
 repo gates on the resulting `MFA_SATISFIED` authority yet), encrypted versioned backups
 of the tube data + content PVC, per-node attached storage for the GPU host that runs the
@@ -291,25 +320,31 @@ tube serves owner-private archived bytes, not live A/V.
 ## Roadmap / not yet in this repo
 
 The tube service ships dark by default and is GPU-pinned (requires an x86 node with a
-GPU). The items below are 🔭 planned or 🚧 in-flight and are not shipped in this repo.
-This BFF owns the control surfaces they plug into, but the components themselves live
-elsewhere:
+GPU; `nodeSelector: hugmesh.net/compute: gpu`). The items below are not shipped in this
+repo. This BFF owns the control surfaces they plug into, but the components themselves
+live elsewhere. Status is as of 2026-10-07:
 
 - 🔭 **yt-dlp downloader runner image + generator-gated polling CronJob** — drains the
   `tube_download_job` work-queue via the `ROLE_TUBE_WORKER` claim/report endpoints. The
   queue + claim/report + storage budgets are ✅ shipped here; the runner/CronJob are a
   deferred follow-up.
-- 🔭 **tube-media Nginx serving sidecar + `be-gateway /tube/content/**` route** that
-  verifies the HMAC-signed URLs this BFF issues (via a `auth_request` to
-  `/bff/tube/media/verify`). The signing AND the public `/verify` `auth_request` endpoint
-  are ✅ shipped here; the byte-serving sidecar that calls `/verify` is an external component.
-- 🔭 **`hugmesh-tube-ui` native-federation remote** (DB-hosted federated Angular
-  module) consuming these BFF endpoints.
-- 🔭 **Generator devops for the tube optional service** — the deployment story:
-  DEFAULT-OFF / ships-dark, GPU-pinned (x86 + GPU) per-domain enable gated on a
-  superadmin `TUBE_MANAGE` + a GPU-node check.
+- ✅ elsewhere: **tube-media Nginx serving sidecar + `be-gateway /tube/content/**` route**
+  that verifies the HMAC-signed URLs this BFF issues (via an `auth_request` to
+  `/bff/tube/media/verify`). The sidecar is a container in the tube pod
+  (`hugmesh-generator` `specs/cluster/manifests/tube/deployment.yaml`); the route has a
+  `ROLE_TUBE` route-access row. The signing AND the public `/verify` endpoint are ✅
+  shipped here. The content volume is an `emptyDir` ("dev default; replace with a
+  node-pinned PVC"), and nothing writes to it until a downloader exists.
+- ✅ elsewhere: **`hugmesh-tube-ui` native-federation remote** (Angular, in the
+  `hugmesh-tube-ui` repo; registered by `hugmesh-federation-api` changeset
+  `033-register-tube-module.xml`) consuming these BFF endpoints.
+- 🚧 **Generator devops for the tube optional service** — `apps/53-tube.yaml` and
+  `manifests/tube` exist: DEFAULT-OFF, build-time gate, GPU-pinned x86. Not built: the
+  per-domain superadmin enable with a GPU-node check, and the deployment does not yet
+  pass this BFF's `TUBE_GOOGLE_*` settings (see Known Gaps).
 - 🔭 **mod-bff tube moderation surface** — `tube.*` ModActionType + the derived
-  `ROLE_TUBE_MOD` (MOD ∩ TUBE); lands in mod-bff, not here.
+  `ROLE_TUBE_MOD` (MOD ∩ TUBE); lands in mod-bff, not here. mod-bff `main` has no tube
+  code today.
 - 🔭 **Wider admin surface** — quota / retention / allow-deny-users / cadence
   governance. Only the storage-budget `POST` is shipped today.
 - 🚧 **Notifications EXTERNAL channels** (platform-wide, in-flight) — Matrix DM / Akkoma
@@ -318,7 +353,7 @@ elsewhere:
 
 ## Known Gaps / TODO
 
-No `TODO`/`FIXME`/`@Deprecated`/stub markers exist anywhere in `src/main/java` — every
+No `TODO`/`FIXME`/`@Deprecated` markers exist anywhere in `src/main/java` — every
 surface documented above as ✅ shipped is fully implemented in this repo. The gaps below
 are verified against the current code (not invented) and are consumers/producers this BFF
 is wired for but that live in a separate, not-yet-written component:
@@ -330,15 +365,22 @@ is wired for but that live in a separate, not-yet-written component:
   polls `POST /bff/tube/internal/download-jobs/{claim,report}` — that CronJob/image does
   not exist in this repo (tracked above under "yt-dlp downloader runner image").
 - **No consumer of the signed media URL exists in this repo.** `TubeMediaController.sign`/
-  `verify` (`src/main/java/net/hugmesh/tubebff/media/TubeMediaController.java:127-214`)
-  fully implements signing + verification, but the tube-media Nginx sidecar that would call
-  `GET /bff/tube/media/verify` as its `auth_request` target, and serve the actual bytes at
-  `be-gateway /tube/content/**`, is external (tracked above).
+  `verify` (`src/main/java/net/hugmesh/tubebff/media/TubeMediaController.java:109-214`)
+  fully implements signing + verification. The tube-media Nginx sidecar that calls
+  `GET /bff/tube/media/verify` as its `auth_request` target, and serves the bytes at
+  `be-gateway /tube/content/**`, is defined in `hugmesh-generator` (tracked above).
+- **The generator's tube Deployment does not pass the settings this BFF reads.**
+  `specs/cluster/manifests/tube/deployment.yaml` sets `TUBE_MEDIA_KEY` (which matches),
+  but also `TUBE_TOKEN_DEK`, `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`.
+  `application.yml` reads `TUBE_GOOGLE_CLIENT_ID`, `TUBE_GOOGLE_CLIENT_SECRET`,
+  `TUBE_GOOGLE_REDIRECT_URI`, `TUBE_GOOGLE_DEK` and `TUBE_GOOGLE_STATE_HMAC_KEY`, and no code
+  reads the generator's names. The blank defaults fail closed, so in a cluster built from
+  that manifest the Google connect endpoints error until the manifest is fixed.
 - **Admin governance surface is grant/timeout/ban/restore + storage-budget only.**
   `TubeStorageBudgetController` (`src/main/java/net/hugmesh/tubebff/download/TubeStorageBudgetController.java:39-80`)
   exposes only a `POST` to set a user's budget — there is no `GET` to read current
   per-user budgets/usage in bulk, and no quota/retention/cadence admin endpoints exist
-  anywhere under `download/` or `access/` (the PR8 wider admin surface referenced above).
+  anywhere under `download/` or `access/` (the wider admin surface referenced above).
 - **`DownloadJob.contentPath`** (`src/main/java/net/hugmesh/tubebff/download/DownloadJob.java:65`)
   is stamped by the worker's `report` call and stored, but nothing in this repo resolves
   or serves that path — it is consumed only by the (external) tube-media sidecar.
