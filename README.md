@@ -1,11 +1,13 @@
 # hugmesh-tube-bff-api
 
-Tube BFF — the access-governance + control plane for the **LocalTube** video OPTIONAL
-SERVICE (self-hosted personal YouTube archival: a user connects Google, their subscribed
-channels sync to a DB, and yt-dlp downloads new videos on a schedule for owner-private
-in-platform viewing). Twin of `hugmesh-owncast-bff-api` / `hugmesh-wiki-bff-api`
-(Java 25 WebFlux + R2DBC Postgres + Liquibase + Casdoor JWT resource server, package
-`net.hugmesh.tubebff`, artifact `tube-bff` 0.2.0, Spring Boot 4.0.7).
+Tube BFF is the access-governance and control plane for **LocalTube**, an OPTIONAL
+SERVICE for self-hosted personal YouTube archival. A user connects Google, their
+subscribed channels sync to a database, and yt-dlp downloads new videos on a schedule for
+owner-private viewing inside the platform. This BFF decides who may use the archive. It
+never touches a video byte. It is a twin of `hugmesh-owncast-bff-api` /
+`hugmesh-wiki-bff-api` (Java 25 WebFlux + R2DBC Postgres + Liquibase + Casdoor JWT
+resource server, package `net.hugmesh.tubebff`, artifact `tube-bff` 0.2.0, Spring Boot
+4.0.7).
 
 > **State convention:** ✅ shipped (on `main`) · 🚧 in-flight (open branch/PR) ·
 > 🔭 planned (design only, no code in this repo). See the
@@ -16,89 +18,88 @@ in-platform viewing). Twin of `hugmesh-owncast-bff-api` / `hugmesh-wiki-bff-api`
 As of commit `7770e96` (2026-10-07) this BFF sits on the unified HugMesh ecosystem baseline:
 
 - **Spring Boot 4.0.7 / Spring Cloud 2025.1.2, Java 25 LTS, WebFlux reactive.** The build is
-  a child of the org metapom **`hugmesh-parent` 2.8.0** (which itself rides Boot 4), so
-  the reactive-BFF dependency + plugin baseline is inherited, not duplicated here.
+  a child of the org metapom **`hugmesh-parent` 2.8.0** (which itself rides Boot 4). The
+  reactive-BFF dependency and plugin baseline is inherited, not repeated here.
 - **Shared security/tenancy via `hugmesh-commons` 2.1.0** (`net.hugmesh.commons.*`).
-  This BFF's former local copies of `security.{Roles,CasdoorAuthorities,DomainRegistry,DomainScope}`,
+  The local copies of `security.{Roles,CasdoorAuthorities,DomainRegistry,DomainScope}`,
   `config.TenancyResourceServerConfig` and `web.ApiException` were deleted and now come
-  from commons — version pinned via `hugmesh-parent`'s `${hugmesh-commons.version}`
-  property (2.1.0), which is independent of the parent's own 2.8.0 version number. This
-  BFF does **not** depend on
-  `hugmesh-auth-core` — that artifact carries account/session/MFA/Casdoor-admin infra
-  and is consumed only by `user-bff` + `admin-bff`; tube-bff owns no login/session/account
-  surface (it only connects Google for `youtube.readonly` on behalf of an
-  already-authenticated principal).
+  from commons. `hugmesh-parent` pins the version through `${hugmesh-commons.version}`
+  (2.1.0), which is independent of the parent's own 2.8.0. This BFF does **not** depend on
+  `hugmesh-auth-core`: that artifact carries account/session/MFA/Casdoor-admin infra and
+  is consumed only by `user-bff` + `admin-bff`. tube-bff owns no login, session or account
+  surface. It only connects Google for `youtube.readonly` on behalf of an
+  already-authenticated principal.
 - **Place in the auth model.** tube-bff is a pure **downstream Casdoor-JWT OAuth2 resource
-  server** reached only through the gateway. The browser holds an OPAQUE `bff_`-prefixed
-  session and never its Casdoor JWT; the gateway's pre-security exchange filter swaps
-  `bff_` → the internal custody JWT before proxying, so this BFF always receives a normal
-  validated Casdoor JWT and its authorities/issuer→domain logic runs unchanged. The
-  platform's login/session relocation (admin-bff → user-bff) and the auth-core extraction
-  do **not** touch this repo. Authorization upstream is data-driven by the gateway's
-  `gateway_route_access` table; the base `ROLE_TUBE` row is the route-access floor before
-  any handler here runs.
-- **Data access** is Spring Data R2DBC reactive repositories (Liquibase migrates over a
-  JDBC datasource; runtime is R2DBC): derived finders, plus constant-string `@Query`
-  methods for the guarded compare-and-set updates and the `RETURNING id` inserts
-  (`TubeAccessR2dbcRepository`, `DownloadJobR2dbcRepository`). There is no `DatabaseClient`
-  raw SQL.
+  server**, reached only through the gateway. The browser holds an OPAQUE `bff_`-prefixed
+  session and never its Casdoor JWT. The gateway's pre-security exchange filter swaps
+  `bff_` for the internal custody JWT before proxying, so this BFF always receives a
+  normal validated Casdoor JWT and its authorities and issuer→domain logic run unchanged.
+  The platform's login/session relocation (admin-bff → user-bff) and the auth-core
+  extraction do **not** touch this repo. The gateway's `gateway_route_access` table drives
+  authorization upstream; the base `ROLE_TUBE` row is the route-access floor before any
+  handler here runs.
+- **Data access** is Spring Data R2DBC reactive repositories. Liquibase migrates over a
+  JDBC datasource; runtime is R2DBC. The repositories use derived finders, plus
+  constant-string `@Query` methods for the guarded compare-and-set updates and the
+  `RETURNING id` inserts (`TubeAccessR2dbcRepository`, `DownloadJobR2dbcRepository`).
+  There is no `DatabaseClient` raw SQL.
 - **CI is GitLab** (`.gitlab-ci.yml`). This repo has **no** GitHub Actions workflow (the
   Actions API lists none). The GitHub repo is pull-mirrored into in-cluster GitLab. The
   `Dockerfile` can also resolve the `net.hugmesh` dependencies from GitHub Packages; see
   [CI](#ci).
-- **API↔API mTLS (server side) is already wired.** `server.ssl.*` is disabled by default
-  (`SSL_ENABLED=false`, `SSL_CLIENT_AUTH=none`) so local/dev/CI run plaintext. In-cluster,
-  a deployment turns it on by mounting a PKCS12 keystore (this service's Vault-PKI-issued
-  identity) + truststore (cluster CA) and setting `SSL_ENABLED=true` /
-  `SSL_CLIENT_AUTH=need` (TLSv1.3 floor by default), so the listener requires a client cert
-  chaining to the cluster CA. The tube Deployment in `hugmesh-generator`
+- **API↔API mTLS (server side) is wired.** `server.ssl.*` is off by default
+  (`SSL_ENABLED=false`, `SSL_CLIENT_AUTH=none`), so local, dev and CI run plaintext. A
+  deployment turns it on by mounting a PKCS12 keystore (this service's Vault-PKI-issued
+  identity) and truststore (cluster CA) and setting `SSL_ENABLED=true` /
+  `SSL_CLIENT_AUTH=need` (TLSv1.3 floor by default). The listener then requires a client
+  cert that chains to the cluster CA. The tube Deployment in `hugmesh-generator`
   (`specs/cluster/manifests/tube/deployment.yaml`) sets none of these variables and mounts
-  no stores, so in-cluster tube-bff listens in plaintext today; the media sidecar calls it
-  on `127.0.0.1:8080`. (This is the listener side of the story; `ROLE_TUBE_WORKER` below is
-  the future yt-dlp caller's own mTLS-principal identity — complementary wiring, not the
-  same thing.)
-- **GraalVM native-image build is wired.** The `native` Maven profile +
+  no stores, so in-cluster tube-bff listens in plaintext today. The media sidecar calls it
+  on `127.0.0.1:8080`. This is the listener side only. `ROLE_TUBE_WORKER` below is the
+  future yt-dlp caller's own mTLS-principal identity, which is separate wiring.
+- **GraalVM native-image build is wired.** The `native` Maven profile and
   `org.graalvm.buildtools:native-maven-plugin` are configured
-  (`./mvnw -Pnative native:compile`), and `config.NativeHintsConfig` registers
-  reflection/resource AOT hints for the DTOs, the R2DBC entities, and the springdoc
-  Swagger UI webjar assets — mirrors `owncast-bff` / `wiki-bff` / `forum-bff` / `user-bff`
+  (`./mvnw -Pnative native:compile`). `config.NativeHintsConfig` registers
+  reflection/resource AOT hints for the DTOs, the R2DBC entities and the springdoc
+  Swagger UI webjar assets, as in `owncast-bff` / `wiki-bff` / `forum-bff` / `user-bff`
   / `federation-api`.
 
-Functionally, everything in [Capabilities](#capabilities-what-is-on-main) (the access
-overlay, Google OAuth connect, download queue, signed media URLs + the GitLab pentest stage)
-is ✅ shipped on `main`. The tube-media sidecar, the `be-gateway` route and the tube-ui
-remote exist in other repos (see [Roadmap / not yet in this repo](#roadmap--not-yet-in-this-repo)).
-The yt-dlp runner and the wider admin quota/retention surface are 🔭 not built.
+Everything in [Capabilities](#capabilities-what-is-on-main) (the access overlay, Google
+OAuth connect, download queue, signed media URLs and the GitLab pentest stage) is ✅
+shipped on `main`. The tube-media sidecar, the `be-gateway` route and the tube-ui remote
+exist in other repos (see
+[Roadmap / not yet in this repo](#roadmap--not-yet-in-this-repo)). The yt-dlp runner and
+the wider admin quota/retention surface are 🔭 not built.
 
 ## What this BFF owns
 
-This service is the **control plane** for the tube service: it owns the access-governance
-overlay and all user-facing connect, list, queue, and signing surfaces. It does NOT serve
-media bytes and does NOT run yt-dlp. Concretely, on `main` today this BFF owns:
+This service is the **control plane** for the tube service. It owns the access-governance
+overlay and every user-facing connect, list, queue and signing surface. It does NOT serve
+media bytes and does NOT run yt-dlp. On `main` today it owns:
 
-- ✅ the `tube_access` **governance overlay** — the per-principal may-use grant/timeout/ban
+- ✅ the `tube_access` **governance overlay**: the per-principal may-use grant/timeout/ban
   table an ADMIN curates on top of the base `ROLE_TUBE` role;
-- ✅ the **Google OAuth link** (`youtube.readonly`) + the **subscription mirror** — the
+- ✅ the **Google OAuth link** (`youtube.readonly`) and the **subscription mirror**. The
   refresh token is stored only as an AES-256-GCM ciphertext (no plaintext column);
-- ✅ the **download work-queue** + **per-user storage budgets** — the
-  queued→claimed→downloading→done/failed/skipped state machine, dedup, and
+- ✅ the **download work-queue** and **per-user storage budgets**: the
+  queued→claimed→downloading→done/failed/skipped state machine, dedup, and the
   claim/report endpoints;
-- ✅ the **media-URL signing** surface — short-TTL HMAC-signed URLs that authorise a
-  byte fetch. The owner two-wall (the check that the path's `sub` and domain match the
-  caller's JWT claims) is enforced here before any URL is issued.
+- ✅ the **media-URL signing** surface: short-TTL HMAC-signed URLs that authorise a byte
+  fetch. The owner two-wall (the check that the path's `sub` and domain match the caller's
+  JWT claims) runs here before any URL is issued.
 
-The media **bytes** are served by a separate tube-media Nginx sidecar behind a
+The media **bytes** come from a separate tube-media Nginx sidecar behind a
 `be-gateway /tube/content/**` route. Both are defined in `hugmesh-generator`, not in this
-repo (the sidecar is a container in the tube pod, on an `emptyDir` content volume). The
+repo. The sidecar is a container in the tube pod, on an `emptyDir` content volume. The
 yt-dlp runner image and the polling CronJob that drain the work-queue exist nowhere yet
-(🔭 not built) — see [Roadmap](#roadmap--not-yet-in-this-repo). What lives HERE are the
-queue, claim/report, and signed-URL **control** surfaces — not the byte plane or the
-downloader.
+(🔭 not built); see [Roadmap](#roadmap--not-yet-in-this-repo). What lives HERE are the
+**control** surfaces: queue, claim/report and signed URLs. The queue is built. The thing
+that drains it is not.
 
 ### Request flows
 
-The browser-to-governance/control path (all routes under `/bff/tube/**` are handled by this
-BFF, reached through the `fe-gateway`):
+The browser-to-governance/control path. This BFF handles every route under `/bff/tube/**`,
+reached through the `fe-gateway`:
 
 ```mermaid
 flowchart LR
@@ -110,8 +111,8 @@ flowchart LR
     browser --> fe --> bff --> pg
 ```
 
-The media **byte** path is a two-step signed flow — the signing hop is a call to THIS
-BFF first, then the byte fetch goes to the separate sidecar:
+The media **byte** path is a two-step signed flow. The browser calls THIS BFF to sign,
+then fetches the bytes from the separate sidecar:
 
 ```mermaid
 flowchart LR
@@ -129,9 +130,9 @@ flowchart LR
     class be,sidecar external
 ```
 
-> Nodes drawn with a dashed border (`be-gateway /tube/content` route + the tube-media
-> sidecar) are **external** — defined in `hugmesh-generator`
-> (`specs/cluster/manifests/tube/deployment.yaml`, route-access row in
+> Dashed nodes (the `be-gateway /tube/content` route and the tube-media sidecar) are
+> **external**. They are defined in `hugmesh-generator`
+> (`specs/cluster/manifests/tube/deployment.yaml`; the route-access row is in
 > `specs/cluster/manifests/route-access/initdb/20-schema.sql`), not in this repo. The
 > signing hop (`/bff/tube/media/sign`) and the `/verify` endpoint the sidecar calls are
 > ✅ shipped here.
@@ -165,40 +166,40 @@ sidecar calls inside the pod.
   (`ROLE_TUBE` path gate + a live `use` grant; SUPERADMIN exempt from the grant check)
 
 **Media signing** — `media/TubeMediaController`
-- `GET /bff/tube/media/sign` — authenticated + a live `use` grant (checked first); owner
-  two-wall (path `sub` must equal the caller's JWT subject and brand) → returns a signed
+- `GET /bff/tube/media/sign` — authenticated + a live `use` grant (checked first). Owner
+  two-wall: the path `sub` must equal the caller's JWT subject and brand. Returns a signed
   `/tube/content/<domain>/<subject>/...` URL + `expiresAt` (TTL 5 minutes). `400` for a
   malformed path, `403` for no grant or a path that is not the caller's
 - `GET /bff/tube/media/verify` — **PUBLIC** (`permitAll`), the tube-media nginx sidecar's
-  `auth_request` target; carries NO JWT (the HMAC signature minted by `/sign` is the sole
-  credential). Fail-closed + non-leaking: `200` only for a valid, unexpired signature over
-  the exact `(sub, domain, path, exp)` tuple, `403` (empty body) for every other case
+  `auth_request` target. It carries NO JWT; the HMAC signature minted by `/sign` is the
+  sole credential. Fail-closed and non-leaking: `200` only for a valid, unexpired
+  signature over the exact `(sub, domain, path, exp)` tuple, `403` (empty body) for every
+  other case
 
 **Downloads + budgets** — `download/TubeDownloadController`, `download/TubeDownloadWorkerController`, `download/TubeStorageBudgetController`
 - `GET /bff/tube/downloads` · `POST /bff/tube/downloads` — authenticated + a live `use`
   grant (owner-scoped enqueue/list)
 - `POST /bff/tube/internal/download-jobs/{claim,report}` — **`ROLE_TUBE_WORKER` only**.
-  This role belongs to a service/mTLS principal (the future yt-dlp CronJob). It is
-  deliberately outside the human role hierarchy: no USER, MOD, ADMIN, or SUPERADMIN can
-  reach these endpoints.
+  This role belongs to a service/mTLS principal (the future yt-dlp CronJob). It sits
+  outside the human role hierarchy: no USER, MOD, ADMIN or SUPERADMIN can reach these
+  endpoints.
 - `POST /bff/tube/admin/storage-budget` — set a user's storage budget cap (ADMIN | SUPERADMIN,
   own-brand; a SUPERADMIN is pinned to the default domain on this endpoint)
 
 ## The `tube_access` overlay + `TubeAccessGuard`
 
-The use grant/timeout/ban overlay was cloned directly from the owncast-bff `owncast_grant`
-(004) overlay (which itself cloned the wiki-bff `wiki_access`), with `broadcast` renamed
-to `use`:
+The use grant/timeout/ban overlay was cloned from the owncast-bff `owncast_grant` (004)
+overlay, which itself cloned the wiki-bff `wiki_access`. `broadcast` became `use`:
 
 - **`tube_access`** (Liquibase `004-tube-access.xml`) — the desired-state table.
   Key invariants: `access_type ∈ {use, banned}`; `state ∈ {active, revoked}` (rows are
-  never hard-deleted — audit trail preserved); `expires_at` is NULL for permanent grants
+  never hard-deleted, so the audit trail stays); `expires_at` is NULL for permanent grants
   or a future timestamp for timeout-auto-restore; a partial unique index enforces at most
   one active row per `(domain, user_subject, access_type)`.
-- **`TubeAccessGuard.assertCanUse`** — the load-bearing **default-deny** enforcement gate.
-  See the decision diagram below for the full precedence chain. `ROLE_TUBE` alone (the
-  gateway route-access floor) does NOT confer the right to use the service; an admin's
-  explicit `use` grant is the only thing that lifts a user above the default-deny floor.
+- **`TubeAccessGuard.assertCanUse`** — the load-bearing **default-deny** gate. The decision
+  diagram below shows the precedence chain. `ROLE_TUBE` alone (the gateway route-access
+  floor) does NOT confer the right to use the service. An admin's explicit `use` grant is
+  the only thing that lifts a user above the default-deny floor.
 - **`ROLE_TUBE`** — the base service role (sibling of `ROLE_OWNCAST` / `ROLE_WIKI` /
   `ROLE_FORUM`).
 
@@ -225,145 +226,150 @@ flowchart TB
 ## Role model
 
 - **SUPERADMIN** — `TUBE_MANAGE` (list all access rows + history); cross-domain; exempt
-  from ban. 🔭 Per-domain service enable with a GPU-node check is not built: tube is a
+  from ban. 🔭 Per-domain service enable with a GPU-node check is not built. Tube is a
   build-time optional service, default off (`hugmesh-generator`
   `specs/cluster/optional-services.yaml`, `gate: build-time`).
-- **ADMIN (own brand)** — `TUBE_GOVERN`: grant/timeout/ban/restore may-use + set storage
+- **ADMIN (own brand)** — `TUBE_GOVERN`: grant/timeout/ban/restore may-use and set storage
   budgets (✅). The wider quota / retention / allow-deny-users / cadence admin surface is
-  🔭 planned (see [Roadmap](#roadmap--not-yet-in-this-repo)) — only the storage-budget `POST` is shipped today.
+  🔭 planned (see [Roadmap](#roadmap--not-yet-in-this-repo)). Only the storage-budget
+  `POST` is shipped today.
 - **MOD** — 🔭 moderation lives in mod-bff (`tube.*` ModActionType, later PR) via the
-  derived `ROLE_TUBE_MOD` (MOD ∩ TUBE); not in this repo.
-- **USER** — `ROLE_TUBE` + a `use` grant (default-deny): connect Google + sync
-  subscriptions + enqueue/list owner-scoped downloads + obtain owner-scoped signed media
-  URLs (✅).
+  derived `ROLE_TUBE_MOD` (MOD ∩ TUBE). Not in this repo.
+- **USER** — `ROLE_TUBE` + a `use` grant (default-deny): connect Google, sync
+  subscriptions, enqueue and list owner-scoped downloads, and obtain owner-scoped signed
+  media URLs (✅).
 - **`ROLE_TUBE_WORKER`** — a non-human service/mTLS principal (the future yt-dlp CronJob)
-  that may claim/report download jobs ONLY; deliberately outside the human role hierarchy.
+  that may claim and report download jobs ONLY. It sits outside the human role hierarchy.
 
 ## Schema (Liquibase changelogs on `main`)
 
-Liquibase runs over a JDBC datasource (Liquibase has no R2DBC runner); all runtime data
-access uses R2DBC. Changelog numbering starts at 004 because this service is cloned from
-the `owncast_grant` / `wiki_access` overlay, which also starts at 004. Changelogs 001–003
-exist in wiki-bff for the wiki content store; tube has no equivalent content store — its
-schema is grant-and-queue-only. The list below mirrors the comment block in
+Liquibase runs over a JDBC datasource (it has no R2DBC runner). All runtime data access
+uses R2DBC. Changelog numbering starts at 004 because this service is cloned from the
+`owncast_grant` / `wiki_access` overlay, which also starts at 004. Changelogs 001–003
+exist in wiki-bff for the wiki content store. Tube has no content store; its schema is
+grant-and-queue-only. The list below mirrors the comment block in
 `db.changelog-master.xml`:
 
 - **004 `tube-access`** — the use grant/timeout/ban overlay.
 - **005a `tube-google-link`** — `tube_google_link`: per-(brand,user) Google OAuth
-  `youtube.readonly` connection; refresh token stored only as AES-256-GCM ciphertext
-  (`refresh_token_ciphertext = base64(iv||ct||tag)`), partial-UNIQUE on the live row,
-  soft-revoke=audit.
+  `youtube.readonly` connection. The refresh token is stored only as AES-256-GCM
+  ciphertext (`refresh_token_ciphertext = base64(iv||ct||tag)`). Partial-UNIQUE on the
+  live row; soft-revoke = audit.
 - **005b `tube-download-queue`** — `tube_download_job` (the queued→claimed→downloading→
-  done/failed/skipped work-queue + dedup + claim/report) + `tube_storage_usage`
+  done/failed/skipped work-queue, with dedup and claim/report) + `tube_storage_usage`
   (per-user budget accounting).
 - **006 `tube-subscription`** — `tube_subscription`: per-(brand,user) mirror of subscribed
   YouTube channels, `UNIQUE(domain, user_subject, channel_id)`.
 - **007 `tube-subscription-download-fields`** — adds `latest_video_id`,
-  `latest_video_title`, `created_at`, `updated_at` so the work-queue can use
+  `latest_video_title`, `created_at`, `updated_at`, so the work-queue can use
   `tube_subscription` as its enqueue source.
 - **008 `db-generated-uuid-pks`** — moves the `varchar(64)` UUID primary keys of
   `tube_access` / `tube_download_job` / `tube_google_link` / `tube_subscription` from
   app-minted (`UUID.randomUUID().toString()`) to DB-generated column DEFAULTs
-  (`(gen_random_uuid())::text`, with `pgcrypto` installed defensively); inserts omit `id`
+  (`(gen_random_uuid())::text`, with `pgcrypto` installed defensively). Inserts omit `id`
   and read it back via `RETURNING id` (adopts the mod-bff #36 / admin-bff #133 pattern;
   commit `3cb3c68`).
 
 ## CI
 
-CI = GitLab (`.gitlab-ci.yml`). The GitHub repo is pull-mirrored into the in-cluster GitLab
-(`mirror_trigger_builds=true`), so the pipeline runs on push and mirror-sync. Stages:
+CI = GitLab (`.gitlab-ci.yml`). The GitHub repo is pull-mirrored into the in-cluster
+GitLab (`mirror_trigger_builds=true`), so the pipeline runs on push and mirror-sync.
+Stages:
 
 - **`test:unit`** — runs `./mvnw -B -s settings.xml -DskipITs test` (unit and slice tests,
   with a `docker:27-dind` service because the full-context tests start Postgres through
-  Testcontainers), then `git diff --exit-code`: the job fails if a test rewrote a
+  Testcontainers), then `git diff --exit-code`. The job fails if a test rewrote a
   committed file such as `src/main/resources/openapi/openapi.json`. A failure here
-  blocks image build, preventing a broken overlay or guard from shipping.
-- **`build:image`** — runs on the default branch and on tags only. Builds and pushes the
-  container image on the privileged x86 runner. Each image gets an immutable tag (the
+  blocks the image build, so a broken overlay or guard does not ship.
+- **`build:image`** — runs on the default branch and on tags only. It builds and pushes
+  the container image on the privileged x86 runner. Each image gets an immutable tag (the
   release tag, else the short SHA) and a moving branch tag. Images carry no embedded
-  keys. The `Dockerfile` has two registry paths: with the BuildKit secret `ci_job_token`
-  it resolves `hugmesh-commons` from the GitLab group registry (`settings.xml`); with
-  the secret `packages_read_token` it uses GitHub Packages
-  (`.github/maven-ci-settings.xml`). `ReleaseImageGuardTest` pins both.
-- **`pentest`** — ✅ the continuous-OWASP stage per the platform pen-test standard.
-  Contains two jobs: `pentest:sca` (OWASP Dependency-Check SCA) and `pentest:dast`
-  (authenticated ZAP DAST baseline including nuclei probes). Both jobs extend the
-  centralised `.pentest-*` hidden jobs from
-  `hugmesh-generator/tests/pentest/ci/pentest-stage.gitlab-ci.yml`. Currently
-  `allow_failure: true` (report-and-fix posture, not a hard gate). `make pentest`
-  mirrors them locally: SCA with a looser CVSS gate (9, override with
+  keys. The `Dockerfile` has two registry paths. With the BuildKit secret `ci_job_token`
+  it resolves `hugmesh-commons` from the GitLab group registry (`settings.xml`). With the
+  secret `packages_read_token` it uses GitHub Packages (`.github/maven-ci-settings.xml`).
+  `ReleaseImageGuardTest` pins both.
+- **`pentest`** — ✅ the continuous-OWASP stage per the platform pen-test standard, with
+  two jobs: `pentest:sca` (OWASP Dependency-Check SCA) and `pentest:dast` (authenticated
+  ZAP DAST baseline including nuclei probes). Both extend the centralised `.pentest-*`
+  hidden jobs from `hugmesh-generator/tests/pentest/ci/pentest-stage.gitlab-ci.yml`.
+  Both run with `allow_failure: true` (report-and-fix posture, not a hard gate).
+  `make pentest` mirrors them locally: SCA with a looser CVSS gate (9, override with
   `PENTEST_SCA_CVSS`; CI uses 7), and DAST only when `DAST_TARGET_URL` is set (it skips
   otherwise).
 
 > k6 load testing is part of the platform pen-test standard but is not wired into THIS
 > repo's pipeline yet (SCA + DAST baseline are).
 
-Build + test locally: `./mvnw -DskipITs test`. A `native` Maven profile is also wired
-(`./mvnw -Pnative native:compile` — GraalVM binary, needs a GraalVM host); AOT
+Build and test locally: `./mvnw -DskipITs test`. A `native` Maven profile is also wired
+(`./mvnw -Pnative native:compile` — GraalVM binary, needs a GraalVM host). AOT
 reachability hints live in `config.NativeHintsConfig`.
 
 ## Roadmap
 
-This repo tracks the platform's tube-service slice of the wider HugMesh roadmap. The
-immediate, repo-local follow-ups are enumerated under
+This repo tracks the tube-service slice of the wider HugMesh roadmap. The repo-local
+follow-ups are under
 [Roadmap / not yet in this repo](#roadmap--not-yet-in-this-repo) below. Platform-wide
-initiatives this BFF will plug into as they land: MFA / step-up for privileged
-tube governance ops (the `SecurityConfig` MFA-authority-converter parity —
-`app.mfa.enabled` / `app.mfa.freshness-window` → `CasdoorAuthorities.MfaConfig` — already
-ships here from the platform-wide `d6d8` fan-out, dark/OFF by default; no route in this
-repo gates on the resulting `MFA_SATISFIED` authority yet), encrypted versioned backups
-of the tube data + content PVC, per-node attached storage for the GPU host that runs the
-byte plane, and the multi-tenancy superadmin (per-domain enable of the tube optional
-service). A/V-adjacent media remains LAN-only until the platform TURN/SFU work lands;
-tube serves owner-private archived bytes, not live A/V.
+initiatives this BFF will plug into as they land:
+
+- MFA / step-up for privileged tube governance ops. The `SecurityConfig`
+  MFA-authority-converter parity (`app.mfa.enabled` / `app.mfa.freshness-window` →
+  `CasdoorAuthorities.MfaConfig`) already ships here from the platform-wide `d6d8`
+  fan-out, dark/OFF by default. No route in this repo gates on the resulting
+  `MFA_SATISFIED` authority yet.
+- Encrypted versioned backups of the tube data and content PVC.
+- Per-node attached storage for the GPU host that runs the byte plane.
+- The multi-tenancy superadmin (per-domain enable of the tube optional service).
+
+A/V-adjacent media remains LAN-only until the platform TURN/SFU work lands. Tube serves
+owner-private archived bytes, not live A/V.
 
 ## Roadmap / not yet in this repo
 
-The tube service ships dark by default and is GPU-pinned (requires an x86 node with a
-GPU; `nodeSelector: hugmesh.net/compute: gpu`). The items below are not shipped in this
-repo. This BFF owns the control surfaces they plug into, but the components themselves
-live elsewhere. Status is as of 2026-10-07:
+The tube service ships dark by default and is GPU-pinned (an x86 node with a GPU;
+`nodeSelector: hugmesh.net/compute: gpu`). The items below are not shipped in this repo.
+This BFF owns the control surfaces they plug into; the components live elsewhere. Status
+is as of 2026-10-07:
 
 - 🔭 **yt-dlp downloader runner image + generator-gated polling CronJob** — drains the
-  `tube_download_job` work-queue via the `ROLE_TUBE_WORKER` claim/report endpoints. The
-  queue + claim/report + storage budgets are ✅ shipped here; the runner/CronJob are a
-  deferred follow-up.
+  `tube_download_job` work-queue through the `ROLE_TUBE_WORKER` claim/report endpoints.
+  The queue, claim/report and storage budgets are ✅ shipped here. The runner and CronJob
+  are a deferred follow-up.
 - ✅ elsewhere: **tube-media Nginx serving sidecar + `be-gateway /tube/content/**` route**
-  that verifies the HMAC-signed URLs this BFF issues (via an `auth_request` to
-  `/bff/tube/media/verify`). The sidecar is a container in the tube pod
+  that verifies the HMAC-signed URLs this BFF issues, through an `auth_request` to
+  `/bff/tube/media/verify`. The sidecar is a container in the tube pod
   (`hugmesh-generator` `specs/cluster/manifests/tube/deployment.yaml`); the route has a
   `ROLE_TUBE` route-access row. The signing AND the public `/verify` endpoint are ✅
   shipped here. The content volume is an `emptyDir` ("dev default; replace with a
   node-pinned PVC"), and nothing writes to it until a downloader exists.
 - ✅ elsewhere: **`hugmesh-tube-ui` native-federation remote** (Angular, in the
   `hugmesh-tube-ui` repo; registered by `hugmesh-federation-api` changeset
-  `033-register-tube-module.xml`) consuming these BFF endpoints.
+  `033-register-tube-module.xml`), consuming these BFF endpoints.
 - 🚧 **Generator devops for the tube optional service** — `apps/53-tube.yaml` and
   `manifests/tube` exist: DEFAULT-OFF, build-time gate, GPU-pinned x86. Not built: the
-  per-domain superadmin enable with a GPU-node check, and the deployment does not yet
+  per-domain superadmin enable with a GPU-node check. The deployment also does not yet
   pass this BFF's `TUBE_GOOGLE_*` settings (see Known Gaps).
 - 🔭 **mod-bff tube moderation surface** — `tube.*` ModActionType + the derived
-  `ROLE_TUBE_MOD` (MOD ∩ TUBE); lands in mod-bff, not here. mod-bff `main` has no tube
+  `ROLE_TUBE_MOD` (MOD ∩ TUBE). It lands in mod-bff, not here. mod-bff `main` has no tube
   code today.
-- 🔭 **Wider admin surface** — quota / retention / allow-deny-users / cadence
-  governance. Only the storage-budget `POST` is shipped today.
+- 🔭 **Wider admin surface** — quota / retention / allow-deny-users / cadence governance.
+  Only the storage-budget `POST` is shipped today.
 - 🚧 **Notifications EXTERNAL channels** (platform-wide, in-flight) — Matrix DM / Akkoma
-  feed / phpBB / email adapters on top of the in-app notifications MVP; the tube service
+  feed / phpBB / email adapters on top of the in-app notifications MVP. The tube service
   would emit account/infra events through that subsystem.
 
 ## Known Gaps / TODO
 
-No `TODO`/`FIXME`/`@Deprecated` markers exist anywhere in `src/main/java` — every
-surface documented above as ✅ shipped is fully implemented in this repo. The gaps below
-are verified against the current code (not invented) and are consumers/producers this BFF
-is wired for but that live in a separate, not-yet-written component:
+No `TODO`/`FIXME`/`@Deprecated` markers exist anywhere in `src/main/java`; every surface
+documented above as ✅ shipped is fully implemented in this repo. The gaps below are
+verified against the current code. Each is a consumer or producer this BFF is wired for
+but that lives in a separate component:
 
-- **No yt-dlp worker actually calls the claim/report seam yet.** `TubeDownloadWorkerController`
+- **No yt-dlp worker calls the claim/report seam yet.** `TubeDownloadWorkerController`
   (`src/main/java/net/hugmesh/tubebff/download/TubeDownloadWorkerController.java:36-104`)
   and the `ROLE_TUBE_WORKER`-only path gate (`src/main/java/net/hugmesh/tubebff/config/SecurityConfig.java:168`)
-  are fully implemented and gated, but the queue only drains when an external worker
-  polls `POST /bff/tube/internal/download-jobs/{claim,report}` — that CronJob/image does
-  not exist in this repo (tracked above under "yt-dlp downloader runner image").
+  are fully implemented and gated. The queue drains only when an external worker polls
+  `POST /bff/tube/internal/download-jobs/{claim,report}`. That CronJob/image does not
+  exist (tracked above under "yt-dlp downloader runner image").
 - **No consumer of the signed media URL exists in this repo.** `TubeMediaController.sign`/
   `verify` (`src/main/java/net/hugmesh/tubebff/media/TubeMediaController.java:109-214`)
   fully implements signing + verification. The tube-media Nginx sidecar that calls
@@ -376,44 +382,44 @@ is wired for but that live in a separate, not-yet-written component:
   `TUBE_GOOGLE_REDIRECT_URI`, `TUBE_GOOGLE_DEK` and `TUBE_GOOGLE_STATE_HMAC_KEY`, and no code
   reads the generator's names. The blank defaults fail closed, so in a cluster built from
   that manifest the Google connect endpoints error until the manifest is fixed.
-- **Admin governance surface is grant/timeout/ban/restore + storage-budget only.**
+- **Admin governance is grant/timeout/ban/restore + storage-budget only.**
   `TubeStorageBudgetController` (`src/main/java/net/hugmesh/tubebff/download/TubeStorageBudgetController.java:39-80`)
-  exposes only a `POST` to set a user's budget — there is no `GET` to read current
-  per-user budgets/usage in bulk, and no quota/retention/cadence admin endpoints exist
-  anywhere under `download/` or `access/` (the wider admin surface referenced above).
+  exposes only a `POST` to set a user's budget. There is no `GET` to read per-user
+  budgets or usage in bulk, and no quota/retention/cadence admin endpoint exists anywhere
+  under `download/` or `access/` (the wider admin surface referenced above).
 - **`DownloadJob.contentPath`** (`src/main/java/net/hugmesh/tubebff/download/DownloadJob.java:65`)
-  is stamped by the worker's `report` call and stored, but nothing in this repo resolves
-  or serves that path — it is consumed only by the (external) tube-media sidecar.
+  is stamped by the worker's `report` call and stored. Nothing in this repo resolves or
+  serves that path; only the (external) tube-media sidecar consumes it.
 - **`tube_google_link.google_sub` / `google_email` are always persisted as `NULL` in
   production.** `DefaultGoogleApiClient.toTokenResponse`
   (`src/main/java/net/hugmesh/tubebff/google/DefaultGoogleApiClient.java:158-173`)
   never decodes the token endpoint's `id_token` and never calls the Google `userinfo`
-  endpoint, and no other class in this repo does either — only the `refresh_token` /
+  endpoint, and no other class in this repo does either. Only the `refresh_token` /
   `access_token` / `scope` fields of the OAuth token response are real. No test catches
-  this because **no test asserts on `googleSub`/`googleEmail` off the persistence path at
-  all**: `GoogleConnectServiceTest` drives the connect flow but never inspects either
-  field, and `GoogleConnectControllerTest`'s `$.googleEmail` assertion is a `@WebFluxTest`
-  that mocks `GoogleConnectService`/`TubeGoogleLinkRepository` and hand-builds the
-  `TubeGoogleLink` it asserts against — so it exercises the `ConnectStatus` DTO projection
-  in isolation and never reaches `DefaultGoogleApiClient`. (`FakeGoogleApiClient` does
-  fabricate a sub/email that production cannot produce, but it is not in that controller
-  test's object graph and no test reads those fields, so it masks nothing today — it is a
-  latent trap that would spuriously green a future test rather than the cause of the
-  current gap.) Impact is limited: `google_sub` is **write-only** — nothing in this repo
-  reads it — and `google_email` is read only by `TubeGoogleDto.ConnectStatus` for display.
-  Neither is a lookup/authz/dedup key (see `005-tube-google-link.xml`).
+  this, because **no test asserts on `googleSub`/`googleEmail` off the persistence path**:
+  `GoogleConnectServiceTest` drives the connect flow but never inspects either field, and
+  `GoogleConnectControllerTest`'s `$.googleEmail` assertion is a `@WebFluxTest` that mocks
+  `GoogleConnectService`/`TubeGoogleLinkRepository` and hand-builds the `TubeGoogleLink`
+  it asserts against. It exercises the `ConnectStatus` DTO projection in isolation and
+  never reaches `DefaultGoogleApiClient`. (`FakeGoogleApiClient` does fabricate a
+  sub/email that production cannot produce, but it is not in that controller test's
+  object graph and no test reads those fields. It masks nothing today; it is a latent trap
+  that could spuriously green a future test.) Impact is limited: `google_sub` is
+  **write-only** (nothing in this repo reads it) and `google_email` is read only by
+  `TubeGoogleDto.ConnectStatus` for display. Neither is a lookup, authz or dedup key (see
+  `005-tube-google-link.xml`).
 
-  **Closing this gap is NOT just "decode the id_token" — that alone cannot work.**
+  **Closing this gap takes more than decoding the id_token.** That alone cannot work.
   `GoogleConnectService.buildAuthorizeUrl` requests exactly one scope
   (`SCOPE = https://www.googleapis.com/auth/youtube.readonly`, deliberately "the minimum
-  scope"), and Google only issues an `id_token` when the authorization request carries the
-  `openid` scope — "[t]he scope parameter must begin with the `openid` value"
+  scope"). Google issues an `id_token` only when the authorization request carries the
+  `openid` scope: "[t]he scope parameter must begin with the `openid` value"
   ([Google OIDC docs](https://developers.google.com/identity/protocols/oauth2/openid-connect)).
-  So no `id_token` is ever present in our token response to decode, and `userinfo` is
-  equally unavailable (it needs `openid`/`email`/`profile`). Populating `google_email`
-  therefore REQUIRES adding `openid email` to `SCOPE` — a **consent-surface expansion**:
-  every user would be asked to share their identity and email address on the Google
-  consent screen, contradicting the stated minimum-scope design, in exchange for a
-  display-only field that `tube-ui` already renders with a `|| 'your Google account'`
-  fallback. Existing links would stay `NULL` regardless (their grants predate the scope).
-  That is a product/privacy decision, not a mechanical fix — hence still open.
+  So no `id_token` is ever in our token response, and `userinfo` is equally unavailable
+  (it needs `openid`/`email`/`profile`). Populating `google_email` therefore REQUIRES
+  adding `openid email` to `SCOPE`. That expands the consent surface: every user would be
+  asked to share their identity and email address on the Google consent screen, against
+  the stated minimum-scope design, for a display-only field that `tube-ui` already
+  renders with a `|| 'your Google account'` fallback. Existing links would stay `NULL`
+  regardless, because their grants predate the scope. This is a product and privacy
+  decision, not a mechanical fix, so it stays open.
