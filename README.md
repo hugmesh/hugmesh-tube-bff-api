@@ -59,8 +59,9 @@ Functionally, everything in [Capabilities](#capabilities-what-is-on-main) (the a
 overlay, Google OAuth connect, download queue, signed media URLs + the GitLab pentest stage)
 is ✅ shipped on `main`. The byte plane (tube-media sidecar) ships in `hugmesh-generator`
 and the tube-ui remote ships in [`hugmesh-tube-ui`](https://github.com/hugmesh/hugmesh-tube-ui);
-the yt-dlp runner and the wider admin quota/retention surface remain 🔭 planned
-(see below).
+the yt-dlp runner's CronJob (its worker script and image Dockerfile are in
+[`downloader/`](downloader/)) and the wider admin quota/retention surface remain
+🔭 planned (see below).
 
 ## What this BFF owns
 
@@ -82,10 +83,11 @@ media bytes and does NOT run yt-dlp. Concretely, on `main` today this BFF owns:
 The media **bytes** are served by a separate tube-media Nginx sidecar (✅ shipped in
 `hugmesh-generator`, not in this repo: `specs/cluster/manifests/tube/deployment.yaml`,
 merged in generator PR #178) behind a `be-gateway /tube/content/**` route (✅ the
-`route-access` seed row in the same repo). The yt-dlp runner
-image and the polling CronJob that drain the work-queue are external (🔭 not in this
+`route-access` seed row in the same repo). The yt-dlp worker script and runner image
+Dockerfile are in [`downloader/`](downloader/); the polling CronJob that drains the
+work-queue (in `hugmesh-generator`) and the published image are not yet (🔭 not in this
 repo) — see [Roadmap](#roadmap--not-yet-in-this-repo). What lives HERE are the queue,
-claim/report, and signed-URL **control** surfaces — not the byte plane or the downloader.
+claim/report, and signed-URL **control** surfaces — not the byte plane.
 
 ### Request flows
 
@@ -301,8 +303,9 @@ elsewhere:
 
 - 🔭 **yt-dlp downloader runner image + generator-gated polling CronJob** — drains the
   `tube_download_job` work-queue via the `ROLE_TUBE_WORKER` claim/report endpoints. The
-  queue + claim/report + storage budgets are ✅ shipped here; the runner/CronJob are a
-  deferred follow-up.
+  queue + claim/report + storage budgets are ✅ shipped here. 🚧 The worker script, its
+  tests and the runner image Dockerfile are in [`downloader/`](downloader/); the CronJob
+  manifest in `hugmesh-generator` and publishing the image are still to do.
 - ✅ **tube-media Nginx serving sidecar + `be-gateway /tube/content/**` route** that
   verifies the HMAC-signed URLs this BFF issues (via a `auth_request` to
   `/bff/tube/media/verify`). The signing AND the public `/verify` `auth_request` endpoint
@@ -338,8 +341,9 @@ is wired for but that live in a separate, not-yet-written component:
   (`src/main/java/net/hugmesh/tubebff/download/TubeDownloadWorkerController.java:36-104`)
   and the `ROLE_TUBE_WORKER`-only path gate (`src/main/java/net/hugmesh/tubebff/config/SecurityConfig.java:168`)
   are fully implemented and gated, but the queue only drains when an external worker
-  polls `POST /bff/tube/internal/download-jobs/{claim,report}` — that CronJob/image does
-  not exist in this repo (tracked above under "yt-dlp downloader runner image").
+  polls `POST /bff/tube/internal/download-jobs/{claim,report}` — the worker script is in
+  [`downloader/`](downloader/), but the CronJob that runs it and the published image do
+  not exist yet (tracked above under "yt-dlp downloader runner image").
 - **No consumer of the signed media URL exists in this repo.** `TubeMediaController.sign`/
   `verify` (`src/main/java/net/hugmesh/tubebff/media/TubeMediaController.java:127-214`)
   fully implements signing + verification; the tube-media Nginx sidecar that calls

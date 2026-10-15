@@ -59,6 +59,17 @@ test:unit:
     - git diff --exit-code
       || { echo "BUILD REWROTE A COMMITTED FILE (see the diff above) — a test regenerated a checked-in artefact instead of asserting it. Regenerate locally and commit, or make that test assert."; exit 1; }
 
+# The download worker in downloader/ is plain Python with no dependencies.
+test:downloader:
+  stage: test
+  image: python:3.13-slim
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - cd downloader && python3 -m unittest -v test_tube_worker
+
 build:image:
   stage: build
   tags: [hugmesh-x86, privileged]
