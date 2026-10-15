@@ -81,12 +81,12 @@ media bytes and does NOT run yt-dlp. Concretely, on `main` today this BFF owns:
   caller's JWT claims) is enforced here before any URL is issued.
 
 The media **bytes** are served by a separate tube-media Nginx sidecar (✅ shipped in
-`hugmesh-generator`, not in this repo: `specs/cluster/manifests/tube/deployment.yaml`,
-merged in generator PR #178) behind a `be-gateway /tube/content/**` route (✅ the
-`route-access` seed row in the same repo). The yt-dlp worker script and runner image
-Dockerfile are in [`downloader/`](downloader/); the polling CronJob that drains the
-work-queue (in `hugmesh-generator`) and the published image are not yet (🔭 not in this
-repo) — see [Roadmap](#roadmap--not-yet-in-this-repo). What lives HERE are the queue,
+`hugmesh-generator`, not in this repo: `specs/cluster/manifests/tube/deployment.yaml`)
+behind a `be-gateway /tube/content/**` route (✅ the `route-access` seed row in the same
+repo). The yt-dlp worker script and runner image Dockerfile are in
+[`downloader/`](downloader/); the polling CronJob that drains the work-queue and the
+published image are 🔭 not yet written — see
+[Roadmap](#roadmap--not-yet-in-this-repo). What lives HERE are the queue,
 claim/report, and signed-URL **control** surfaces — not the byte plane.
 
 ### Request flows
@@ -113,7 +113,7 @@ flowchart LR
     fe["fe-gateway<br/>/bff/tube/media/sign"]
     bff["tube-bff (this repo)<br/>owner two-wall + HMAC sign"]
     be["be-gateway<br/>/tube/content/**"]
-    sidecar["tube-media Nginx sidecar<br/>(per-domain content PVC)<br/>verifies HMAC / exp / sub / domain"]
+    sidecar["tube-media Nginx sidecar<br/>(content volume)<br/>auth_request to /bff/tube/media/verify"]
 
     browser -->|"1: GET /bff/tube/media/sign?path=..."| fe --> bff
     bff -.->|"returns signed<br/>/tube/content/&lt;domain&gt;/&lt;subject&gt;/...<br/>?sig=&amp;exp=&amp;sub=&amp;domain="| browser
@@ -297,9 +297,9 @@ tube serves owner-private archived bytes, not live A/V.
 ## Roadmap / not yet in this repo
 
 The tube service ships dark by default and is GPU-pinned (requires an x86 node with a
-GPU). The items below are 🔭 planned or 🚧 in-flight and are not shipped in this repo.
-This BFF owns the control surfaces they plug into, but the components themselves live
-elsewhere:
+GPU). Items marked 🔭 planned or 🚧 in-flight below are not shipped in this repo; items
+marked ✅ are shipped, but in another repo, and are listed here because this BFF owns the
+control surfaces they plug into. The components themselves live elsewhere:
 
 - 🔭 **yt-dlp downloader runner image + generator-gated polling CronJob** — drains the
   `tube_download_job` work-queue via the `ROLE_TUBE_WORKER` claim/report endpoints. The
@@ -310,8 +310,7 @@ elsewhere:
   verifies the HMAC-signed URLs this BFF issues (via a `auth_request` to
   `/bff/tube/media/verify`). The signing AND the public `/verify` `auth_request` endpoint
   are ✅ shipped here; the byte-serving sidecar that calls `/verify` is ✅ shipped in
-  `hugmesh-generator` (`specs/cluster/manifests/tube/deployment.yaml`, generator PR #178;
-  the `/tube/content/**` row is in `specs/cluster/manifests/route-access/initdb/20-schema.sql`;
+  `hugmesh-generator` (`specs/cluster/manifests/tube/deployment.yaml`; the `/tube/content/**` row is in `specs/cluster/manifests/route-access/initdb/20-schema.sql`;
   gate test `tests/stack/test-tube-media-signed-gate.sh`). Its content volume is still a dev
   `emptyDir`; see the per-node storage item in the Roadmap section above.
 - ✅ **`hugmesh-tube-ui` native-federation remote** (DB-hosted federated Angular
@@ -349,7 +348,7 @@ is wired for but that live in a separate, not-yet-written component:
   fully implements signing + verification; the tube-media Nginx sidecar that calls
   `GET /bff/tube/media/verify` as its `auth_request` target, and serves the actual bytes at
   `be-gateway /tube/content/**`, ✅ ships in `hugmesh-generator`
-  (`specs/cluster/manifests/tube/deployment.yaml`, generator PR #178), not in this repo.
+  (`specs/cluster/manifests/tube/deployment.yaml`), not in this repo.
 - **Admin governance surface is grant/timeout/ban/restore + storage-budget only.**
   `TubeStorageBudgetController` (`src/main/java/net/hugmesh/tubebff/download/TubeStorageBudgetController.java:39-80`)
   exposes only a `POST` to set a user's budget — there is no `GET` to read current
