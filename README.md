@@ -297,8 +297,9 @@ elsewhere:
 
 - 🔭 **yt-dlp downloader runner image + generator-gated polling CronJob** — drains the
   `tube_download_job` work-queue via the `ROLE_TUBE_WORKER` claim/report endpoints. The
-  queue + claim/report + storage budgets are ✅ shipped here; the runner/CronJob are a
-  deferred follow-up.
+  queue + claim/report + storage budgets are ✅ shipped here. 🚧 The worker script, its
+  tests and the runner image Dockerfile are in [`downloader/`](downloader/); the CronJob
+  manifest in `hugmesh-generator` and publishing the image are still to do.
 - 🔭 **tube-media Nginx serving sidecar + `be-gateway /tube/content/**` route** that
   verifies the HMAC-signed URLs this BFF issues (via a `auth_request` to
   `/bff/tube/media/verify`). The signing AND the public `/verify` `auth_request` endpoint
