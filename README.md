@@ -57,8 +57,9 @@ As of 2026-06-24 this BFF sits on the unified HugMesh ecosystem baseline:
 
 Functionally, everything in [Capabilities](#capabilities-what-is-on-main) (the access
 overlay, Google OAuth connect, download queue, signed media URLs + the GitLab pentest stage)
-is ✅ shipped on `main`; the byte plane (tube-media sidecar), the yt-dlp runner, the
-tube-ui remote and the wider admin quota/retention surface remain 🔭 external / planned
+is ✅ shipped on `main`. The byte plane (tube-media sidecar) ships in `hugmesh-generator`
+and the tube-ui remote ships in [`hugmesh-tube-ui`](https://github.com/hugmesh/hugmesh-tube-ui);
+the yt-dlp runner and the wider admin quota/retention surface remain 🔭 planned
 (see below).
 
 ## What this BFF owns
@@ -78,9 +79,11 @@ media bytes and does NOT run yt-dlp. Concretely, on `main` today this BFF owns:
   byte fetch. The owner two-wall (the check that the path's `sub` and domain match the
   caller's JWT claims) is enforced here before any URL is issued.
 
-The media **bytes** are served by a separate per-domain tube-media Nginx sidecar
-(🔭 not in this repo) behind a `be-gateway /tube/content/**` route. The yt-dlp runner
-image and the polling CronJob that drain the work-queue are also external (🔭 not in this
+The media **bytes** are served by a separate tube-media Nginx sidecar (✅ shipped in
+`hugmesh-generator`, not in this repo: `specs/cluster/manifests/tube/deployment.yaml`,
+merged in generator PR #178) behind a `be-gateway /tube/content/**` route (✅ the
+`route-access` seed row in the same repo). The yt-dlp runner
+image and the polling CronJob that drain the work-queue are external (🔭 not in this
 repo) — see [Roadmap](#roadmap--not-yet-in-this-repo). What lives HERE are the queue,
 claim/report, and signed-URL **control** surfaces — not the byte plane or the downloader.
 
@@ -114,13 +117,14 @@ flowchart LR
     bff -.->|"returns signed<br/>/tube/content/&lt;domain&gt;/&lt;subject&gt;/...<br/>?sig=&amp;exp=&amp;sub=&amp;domain="| browser
     browser -->|"2: GET /tube/content/... (range/HLS)"| be --> sidecar
 
-    classDef planned stroke-dasharray:4 3
-    class be,sidecar planned
+    classDef external stroke-dasharray:4 3
+    class be,sidecar external
 ```
 
 > Nodes drawn with a dashed border (`be-gateway /tube/content` route + the tube-media
-> sidecar) are 🔭 **planned** — not in this repo. The signing hop (`/bff/tube/media/sign`)
-> is ✅ shipped here.
+> sidecar) are ✅ shipped but live outside this repo, in `hugmesh-generator`
+> (`specs/cluster/manifests/tube/deployment.yaml`, `route-access` seed). The signing hop
+> (`/bff/tube/media/sign`) is ✅ shipped here.
 
 ## Capabilities (what is on `main`)
 
@@ -299,12 +303,19 @@ elsewhere:
   `tube_download_job` work-queue via the `ROLE_TUBE_WORKER` claim/report endpoints. The
   queue + claim/report + storage budgets are ✅ shipped here; the runner/CronJob are a
   deferred follow-up.
-- 🔭 **tube-media Nginx serving sidecar + `be-gateway /tube/content/**` route** that
+- ✅ **tube-media Nginx serving sidecar + `be-gateway /tube/content/**` route** that
   verifies the HMAC-signed URLs this BFF issues (via a `auth_request` to
   `/bff/tube/media/verify`). The signing AND the public `/verify` `auth_request` endpoint
-  are ✅ shipped here; the byte-serving sidecar that calls `/verify` is an external component.
-- 🔭 **`hugmesh-tube-ui` native-federation remote** (DB-hosted federated Angular
-  module) consuming these BFF endpoints.
+  are ✅ shipped here; the byte-serving sidecar that calls `/verify` is ✅ shipped in
+  `hugmesh-generator` (`specs/cluster/manifests/tube/deployment.yaml`, generator PR #178;
+  the `/tube/content/**` row is in `specs/cluster/manifests/route-access/initdb/20-schema.sql`;
+  gate test `tests/stack/test-tube-media-signed-gate.sh`). Its content volume is still a dev
+  `emptyDir`; see the per-node storage item in the Roadmap section above.
+- ✅ **`hugmesh-tube-ui` native-federation remote** (DB-hosted federated Angular
+  module) consuming these BFF endpoints — shipped in
+  [`hugmesh-tube-ui`](https://github.com/hugmesh/hugmesh-tube-ui) (`federation.config.js`
+  exposes `./Tube`), mounted at `/tube` through the `hugmesh-fe-gateway` `/tube/**`
+  `route-access` row in `hugmesh-generator`. Further UI work is tracked in that repo.
 - 🔭 **Generator devops for the tube optional service** — the deployment story:
   DEFAULT-OFF / ships-dark, GPU-pinned (x86 + GPU) per-domain enable gated on a
   superadmin `TUBE_MANAGE` + a GPU-node check.
@@ -331,9 +342,10 @@ is wired for but that live in a separate, not-yet-written component:
   not exist in this repo (tracked above under "yt-dlp downloader runner image").
 - **No consumer of the signed media URL exists in this repo.** `TubeMediaController.sign`/
   `verify` (`src/main/java/net/hugmesh/tubebff/media/TubeMediaController.java:127-214`)
-  fully implements signing + verification, but the tube-media Nginx sidecar that would call
-  `GET /bff/tube/media/verify` as its `auth_request` target, and serve the actual bytes at
-  `be-gateway /tube/content/**`, is external (tracked above).
+  fully implements signing + verification; the tube-media Nginx sidecar that calls
+  `GET /bff/tube/media/verify` as its `auth_request` target, and serves the actual bytes at
+  `be-gateway /tube/content/**`, ✅ ships in `hugmesh-generator`
+  (`specs/cluster/manifests/tube/deployment.yaml`, generator PR #178), not in this repo.
 - **Admin governance surface is grant/timeout/ban/restore + storage-budget only.**
   `TubeStorageBudgetController` (`src/main/java/net/hugmesh/tubebff/download/TubeStorageBudgetController.java:39-80`)
   exposes only a `POST` to set a user's budget — there is no `GET` to read current
@@ -341,7 +353,8 @@ is wired for but that live in a separate, not-yet-written component:
   anywhere under `download/` or `access/` (the PR8 wider admin surface referenced above).
 - **`DownloadJob.contentPath`** (`src/main/java/net/hugmesh/tubebff/download/DownloadJob.java:65`)
   is stamped by the worker's `report` call and stored, but nothing in this repo resolves
-  or serves that path — it is consumed only by the (external) tube-media sidecar.
+  or serves that path — the bytes are served by the tube-media sidecar shipped in
+  `hugmesh-generator`.
 - **`tube_google_link.google_sub` / `google_email` are always persisted as `NULL` in
   production.** `DefaultGoogleApiClient.toTokenResponse`
   (`src/main/java/net/hugmesh/tubebff/google/DefaultGoogleApiClient.java:158-173`)
