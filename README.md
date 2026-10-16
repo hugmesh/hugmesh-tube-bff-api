@@ -15,7 +15,7 @@ resource server, package `net.hugmesh.tubebff`, artifact `tube-bff` 0.2.0, Sprin
 
 ## Current State
 
-As of commit `7770e96` (2026-10-07) this BFF sits on the unified HugMesh ecosystem baseline:
+As of 2026-10-15 this BFF sits on the unified HugMesh ecosystem baseline:
 
 - **Spring Boot 4.0.7 / Spring Cloud 2025.1.2, Java 25 LTS, WebFlux reactive.** The build is
   a child of the org metapom **`hugmesh-parent` 2.8.0** (which itself rides Boot 4). The
@@ -43,10 +43,10 @@ As of commit `7770e96` (2026-10-07) this BFF sits on the unified HugMesh ecosyst
   constant-string `@Query` methods for the guarded compare-and-set updates and the
   `RETURNING id` inserts (`TubeAccessR2dbcRepository`, `DownloadJobR2dbcRepository`).
   There is no `DatabaseClient` raw SQL.
-- **CI is GitLab** (`.gitlab-ci.yml`). This repo has **no** GitHub Actions workflow (the
-  Actions API lists none). The GitHub repo is pull-mirrored into in-cluster GitLab. The
-  `Dockerfile` can also resolve the `net.hugmesh` dependencies from GitHub Packages; see
-  [CI](#ci).
+- **CI is GitLab** (`.gitlab-ci.yml`). The GitHub repo is pull-mirrored into in-cluster
+  GitLab. The only GitHub Actions workflow is `.github/workflows/release.yml`, a manual
+  (`workflow_dispatch`) image release; it runs no tests. The `Dockerfile` can also resolve
+  the `net.hugmesh` dependencies from GitHub Packages; see [CI](#ci).
 - **API↔API mTLS (server side) is wired.** `server.ssl.*` is off by default
   (`SSL_ENABLED=false`, `SSL_CLIENT_AUTH=none`), so local, dev and CI run plaintext. A
   deployment turns it on by mounting a PKCS12 keystore (this service's Vault-PKI-issued
@@ -66,10 +66,12 @@ As of commit `7770e96` (2026-10-07) this BFF sits on the unified HugMesh ecosyst
 
 Everything in [Capabilities](#capabilities-what-is-on-main) (the access overlay, Google
 OAuth connect, download queue, signed media URLs and the GitLab pentest stage) is ✅
-shipped on `main`. The tube-media sidecar, the `be-gateway` route and the tube-ui remote
-exist in other repos (see
-[Roadmap / not yet in this repo](#roadmap--not-yet-in-this-repo)). The yt-dlp runner and
-the wider admin quota/retention surface are 🔭 not built.
+shipped on `main`. The tube-media sidecar and the `be-gateway` route are defined in
+`hugmesh-generator`, and the tube-ui remote is in
+[`hugmesh-tube-ui`](https://github.com/hugmesh/hugmesh-tube-ui) (see
+[Roadmap / not yet in this repo](#roadmap--not-yet-in-this-repo)). The yt-dlp worker
+script and its image Dockerfile are in [`downloader/`](downloader/). The CronJob that runs
+the worker and the wider admin quota/retention surface are 🔭 not built.
 
 ## What this BFF owns
 
@@ -91,10 +93,10 @@ media bytes and does NOT run yt-dlp. On `main` today it owns:
 The media **bytes** come from a separate tube-media Nginx sidecar behind a
 `be-gateway /tube/content/**` route. Both are defined in `hugmesh-generator`, not in this
 repo. The sidecar is a container in the tube pod, on an `emptyDir` content volume. The
-yt-dlp runner image and the polling CronJob that drain the work-queue exist nowhere yet
-(🔭 not built); see [Roadmap](#roadmap--not-yet-in-this-repo). What lives HERE are the
-**control** surfaces: queue, claim/report and signed URLs. The queue is built. The thing
-that drains it is not.
+yt-dlp worker script and runner image Dockerfile are in [`downloader/`](downloader/). The
+polling CronJob that would run it against the work-queue and the published image do not
+exist yet (🔭); see [Roadmap](#roadmap--not-yet-in-this-repo). What lives HERE are the
+**control** surfaces: queue, claim/report and signed URLs.
 
 ### Request flows
 
@@ -120,7 +122,7 @@ flowchart LR
     fe["fe-gateway<br/>/bff/tube/media/sign"]
     bff["tube-bff (this repo)<br/>owner two-wall + HMAC sign"]
     be["be-gateway<br/>/tube/content/**"]
-    sidecar["tube-media Nginx sidecar<br/>(content volume)<br/>verifies HMAC / exp / sub / domain"]
+    sidecar["tube-media Nginx sidecar<br/>(content volume)<br/>auth_request to /bff/tube/media/verify"]
 
     browser -->|"1: GET /bff/tube/media/sign?path=..."| fe --> bff
     bff -.->|"returns signed<br/>/tube/content/&lt;domain&gt;/&lt;subject&gt;/...<br/>?sig=&amp;exp=&amp;sub=&amp;domain="| browser
@@ -326,24 +328,29 @@ owner-private archived bytes, not live A/V.
 ## Roadmap / not yet in this repo
 
 The tube service ships dark by default and is GPU-pinned (an x86 node with a GPU;
-`nodeSelector: hugmesh.net/compute: gpu`). The items below are not shipped in this repo.
-This BFF owns the control surfaces they plug into; the components live elsewhere. Status
-is as of 2026-10-07:
+`nodeSelector: hugmesh.net/compute: gpu`). Items marked 🔭 or 🚧 are not shipped. Items
+marked ✅ elsewhere are shipped in another repo and are listed because this BFF owns the
+control surfaces they plug into:
 
 - 🔭 **yt-dlp downloader runner image + generator-gated polling CronJob** — drains the
   `tube_download_job` work-queue through the `ROLE_TUBE_WORKER` claim/report endpoints.
-  The queue, claim/report and storage budgets are ✅ shipped here. The runner and CronJob
-  are a deferred follow-up.
+  The queue, claim/report and storage budgets are ✅ shipped here. 🚧 The worker script,
+  its tests and the runner image Dockerfile are in [`downloader/`](downloader/). The
+  CronJob manifest in `hugmesh-generator` and publishing the image are still to do.
 - ✅ elsewhere: **tube-media Nginx serving sidecar + `be-gateway /tube/content/**` route**
   that verifies the HMAC-signed URLs this BFF issues, through an `auth_request` to
   `/bff/tube/media/verify`. The sidecar is a container in the tube pod
   (`hugmesh-generator` `specs/cluster/manifests/tube/deployment.yaml`); the route has a
-  `ROLE_TUBE` route-access row. The signing AND the public `/verify` endpoint are ✅
-  shipped here. The content volume is an `emptyDir` ("dev default; replace with a
-  node-pinned PVC"), and nothing writes to it until a downloader exists.
-- ✅ elsewhere: **`hugmesh-tube-ui` native-federation remote** (Angular, in the
-  `hugmesh-tube-ui` repo; registered by `hugmesh-federation-api` changeset
-  `033-register-tube-module.xml`), consuming these BFF endpoints.
+  `ROLE_TUBE` route-access row (`specs/cluster/manifests/route-access/initdb/20-schema.sql`);
+  the gate test is `tests/stack/test-tube-media-signed-gate.sh`. The signing AND the
+  public `/verify` endpoint are ✅ shipped here. The content volume is an `emptyDir`
+  ("dev default; replace with a node-pinned PVC"), and nothing writes to it until the
+  downloader CronJob is deployed.
+- ✅ elsewhere: **`hugmesh-tube-ui` native-federation remote** (Angular, in
+  [`hugmesh-tube-ui`](https://github.com/hugmesh/hugmesh-tube-ui); `federation.config.js`
+  exposes `./Tube`; registered by `hugmesh-federation-api` changeset
+  `033-register-tube-module.xml`; mounted at `/tube` through the `hugmesh-fe-gateway`
+  `/tube/**` route-access row), consuming these BFF endpoints.
 - 🚧 **Generator devops for the tube optional service** — `apps/53-tube.yaml` and
   `manifests/tube` exist: DEFAULT-OFF, build-time gate, GPU-pinned x86. Not built: the
   per-domain superadmin enable with a GPU-node check. The deployment also does not yet
@@ -368,8 +375,9 @@ but that lives in a separate component:
   (`src/main/java/net/hugmesh/tubebff/download/TubeDownloadWorkerController.java:36-104`)
   and the `ROLE_TUBE_WORKER`-only path gate (`src/main/java/net/hugmesh/tubebff/config/SecurityConfig.java:168`)
   are fully implemented and gated. The queue drains only when an external worker polls
-  `POST /bff/tube/internal/download-jobs/{claim,report}`. That CronJob/image does not
-  exist (tracked above under "yt-dlp downloader runner image").
+  `POST /bff/tube/internal/download-jobs/{claim,report}`. The worker script is in
+  [`downloader/`](downloader/), but the CronJob that runs it and the published image do
+  not exist yet (tracked above under "yt-dlp downloader runner image").
 - **No consumer of the signed media URL exists in this repo.** `TubeMediaController.sign`/
   `verify` (`src/main/java/net/hugmesh/tubebff/media/TubeMediaController.java:109-214`)
   fully implements signing + verification. The tube-media Nginx sidecar that calls
