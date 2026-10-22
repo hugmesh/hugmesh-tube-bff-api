@@ -21,6 +21,15 @@
        user-bff / admin-bff): -api is only in the repo/service/image name. -->
   <artifactId>tube-bff</artifactId>
   <version>0.2.0-beta.1</version>
+  <!-- Same licence as the LICENSE file at the repo root (MIT, as across the hugmesh org).
+       hugmesh-parent declares no <licenses>, so it is stated here. -->
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/license/mit</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
   <properties>
     <!-- java.version (25), encoding and the hugmesh-commons version are all
          inherited from hugmesh-parent. This BFF has NO repo-specific RUNTIME deps
