@@ -6,7 +6,7 @@ subscribed channels sync to a database, and yt-dlp downloads new videos on a sch
 owner-private viewing inside the platform. This BFF decides who may use the archive. It
 never touches a video byte. It is a twin of `hugmesh-owncast-bff-api` /
 `hugmesh-wiki-bff-api` (Java 25 WebFlux + R2DBC Postgres + Liquibase + Casdoor JWT
-resource server, package `net.hugmesh.tubebff`, artifact `tube-bff` 0.2.0, Spring Boot
+resource server, package `net.hugmesh.tubebff`, artifact `tube-bff` 0.2.0-beta.1, Spring Boot
 4.0.7).
 
 > **State convention:** ✅ shipped (on `main`) · 🚧 in-flight (open branch/PR) ·
@@ -18,13 +18,13 @@ resource server, package `net.hugmesh.tubebff`, artifact `tube-bff` 0.2.0, Sprin
 As of 2026-10-15 this BFF sits on the unified HugMesh ecosystem baseline:
 
 - **Spring Boot 4.0.7 / Spring Cloud 2025.1.2, Java 25 LTS, WebFlux reactive.** The build is
-  a child of the org metapom **`hugmesh-parent` 2.8.0** (which itself rides Boot 4). The
+  a child of the org metapom **`hugmesh-parent` 2.9.0-beta.1** (which itself rides Boot 4). The
   reactive-BFF dependency and plugin baseline is inherited, not repeated here.
-- **Shared security/tenancy via `hugmesh-commons` 2.1.0** (`net.hugmesh.commons.*`).
+- **Shared security/tenancy via `hugmesh-commons` 2.2.0-beta.1** (`net.hugmesh.commons.*`).
   The local copies of `security.{Roles,CasdoorAuthorities,DomainRegistry,DomainScope}`,
   `config.TenancyResourceServerConfig` and `web.ApiException` were deleted and now come
   from commons. `hugmesh-parent` pins the version through `${hugmesh-commons.version}`
-  (2.1.0), which is independent of the parent's own 2.8.0. This BFF does **not** depend on
+  (2.2.0-beta.1), which is independent of the parent's own 2.9.0-beta.1. This BFF does **not** depend on
   `hugmesh-auth-core`: that artifact carries account/session/MFA/Casdoor-admin infra and
   is consumed only by `user-bff` + `admin-bff`. tube-bff owns no login, session or account
   surface. It only connects Google for `youtube.readonly` on behalf of an
@@ -44,9 +44,10 @@ As of 2026-10-15 this BFF sits on the unified HugMesh ecosystem baseline:
   `RETURNING id` inserts (`TubeAccessR2dbcRepository`, `DownloadJobR2dbcRepository`).
   There is no `DatabaseClient` raw SQL.
 - **CI is GitLab** (`.gitlab-ci.yml`). The GitHub repo is pull-mirrored into in-cluster
-  GitLab. The only GitHub Actions workflow is `.github/workflows/release.yml`, a manual
-  (`workflow_dispatch`) image release; it runs no tests. The `Dockerfile` can also resolve
-  the `net.hugmesh` dependencies from GitHub Packages; see [CI](#ci).
+  GitLab. The only GitHub Actions workflow is `.github/workflows/release.yml`, the beta
+  image release (push to `main`, `v*` tags, manual dispatch); it runs no tests. The
+  `Dockerfile` can also resolve the `net.hugmesh` dependencies from GitHub Packages; see
+  [CI](#ci) and [Releases (beta)](#releases-beta).
 - **API↔API mTLS (server side) is wired.** `server.ssl.*` is off by default
   (`SSL_ENABLED=false`, `SSL_CLIENT_AUTH=none`), so local, dev and CI run plaintext. A
   deployment turns it on by mounting a PKCS12 keystore (this service's Vault-PKI-issued
@@ -305,6 +306,30 @@ Stages:
 Build and test locally: `./mvnw -DskipITs test`. A `native` Maven profile is also wired
 (`./mvnw -Pnative native:compile` — GraalVM binary, needs a GraalVM host). AOT
 reachability hints live in `config.NativeHintsConfig`.
+
+## Releases (beta)
+
+The version is the project `<version>` in `pom.xml`, currently `0.2.0-beta.1`
+(`MAJOR.MINOR.PATCH-beta.N`, the org beta scheme). `.github/workflows/release.yml`
+publishes `ghcr.io/hugmesh/hugmesh-tube-bff-api`:
+
+- a push to `main` pushes `:main` and `:sha-<12 hex>`;
+- pushing the tag `v<version>` (for example `v0.2.0-beta.1`) pushes `:<version>`,
+  `:beta` and `:sha-<12 hex>`, and creates a GitHub Release marked prerelease and
+  not latest. The tag must equal `v` + the pom version, and an existing `:<version>`
+  is never overwritten: a fix raises N (`-beta.2`);
+- a manual dispatch on a `v*` tag re-runs that release; on `main` it is a main build.
+  A dispatch re-run only helps when the image was never pushed: once
+  `:<version>` exists the run stops at the overwrite check. If only the
+  GitHub Release step failed, use "Re-run failed jobs" on the original run.
+
+`:latest` is never pushed for a beta. The image build needs the `net.hugmesh`
+libraries (build-config `0.6.0-beta.1`, parent `2.9.0-beta.1`, commons
+`2.2.0-beta.1`) to be readable from GitHub Packages first, and the
+`PACKAGES_READ_TOKEN` secret. Jobs run on the runner named by the
+`RUNS_ON_PUBLISH` variable (a JSON array) for `main`, `v*` tags and their
+dispatches, and on hosted `ubuntu-latest` otherwise or when the variable is unset.
+The `downloader/` image has no publisher.
 
 ## Roadmap
 
