@@ -1,7 +1,8 @@
 package net.hugmesh.tubebff.media;
 
-import net.hugmesh.tubebff.testsupport.TestProfileKeys;
 import org.junit.jupiter.api.Test;
+
+import net.hugmesh.tubebff.testsupport.TestProfileKeys;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
