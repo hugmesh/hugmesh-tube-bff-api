@@ -7,22 +7,9 @@
 # workaround the Testcontainers base replaces). The context-load test runs a JWT-decoder
 # mock so no live Casdoor is needed.
 
-# TEST-ONLY non-secret keys so the context starts (TokenCipher / GoogleConnectState
-# fail-closed on a missing/short key at construction). These are deterministic,
-# obviously-fake values for CI ONLY — NOT secrets, NOT used in any deployed brand
-# (prod sources tube.google.* from ESO/Vault). DEK = base64(32 bytes 0x00..0x1f);
-# state HMAC key = base64(24 bytes 0x20..0x37). The Web-client creds + redirect stay
-# blank — no slice test calls Google (GoogleApiClient is mocked).
-tube:
-  google:
-    dek: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
-    state-hmac-key: "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3"
-
-# TEST-ONLY non-secret media URL-signing key so the Spring context starts.
-# TubeMediaTokenService (PR3 signed media URLs) reads ${TUBE_MEDIA_KEY} and FAILS CLOSED
-# (IllegalStateException) at construction when it is absent — so the context-load test
-# needs SOME value present. This is the same deterministic, obviously-fake fixture the
-# TubeMediaTokenServiceTest unit test uses (base64 of the 32 ASCII bytes
-# "01234567890123456789012345678901"): NOT a secret, NOT used in any deployed brand
-# (prod injects the real 32-byte key via ESO secret/<brand> -> TUBE_MEDIA_KEY).
-TUBE_MEDIA_KEY: "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="
+# Test keys: NONE here, on purpose. TokenCipher / GoogleConnectState / TubeMediaTokenService
+# fail closed on a missing or short key, so the full-context tests publish well-formed,
+# obviously-fake keys at runtime via @DynamicPropertySource ->
+# src/test/java/net/hugmesh/tubebff/testsupport/TestProfileKeys.java. They used to be
+# literals in this file, which lives in src/main/resources and so shipped in the jar.
+# Prod sources tube.google.* and TUBE_MEDIA_KEY from ESO/Vault.

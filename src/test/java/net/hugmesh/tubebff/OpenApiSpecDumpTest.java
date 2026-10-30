@@ -10,9 +10,12 @@ import org.springframework.boot.webtestclient.autoconfigure.AutoConfigureWebTest
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import net.hugmesh.commons.testsupport.PostgresTestSupport;
+import net.hugmesh.tubebff.testsupport.TestProfileKeys;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -74,6 +77,12 @@ class OpenApiSpecDumpTest extends PostgresTestSupport {
      *  resource-server wiring is satisfied without a network call (matches the
      *  context-load smoke test). */
     @MockitoBean ReactiveJwtDecoder reactiveJwtDecoder;
+
+    /** Same runtime-built test keys as the context-load test, see {@link TestProfileKeys}. */
+    @DynamicPropertySource
+    static void tubeTestProfileKeys(DynamicPropertyRegistry registry) {
+        TestProfileKeys.register(registry);
+    }
 
     @Test
     void dumpsDeterministicOpenApiSpec() throws Exception {
