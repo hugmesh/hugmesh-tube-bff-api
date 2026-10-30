@@ -69,7 +69,7 @@ import static org.mockito.Mockito.when;
 class ControllerCrossBrandAuthzSliceTest extends MultiIssuerControllerSliceSupport {
 
     /** A fixed, obviously-fake 32-byte HMAC key (the same fixture
-     *  {@code TubeMediaControllerTest}/{@code application-test.yml} use). NOT a secret. */
+     *  {@code TubeMediaControllerTest}/{@code TestProfileKeys} use). NOT a secret. */
     private static final String MEDIA_KEY = Base64.getEncoder()
             .encodeToString("01234567890123456789012345678901".getBytes());
 

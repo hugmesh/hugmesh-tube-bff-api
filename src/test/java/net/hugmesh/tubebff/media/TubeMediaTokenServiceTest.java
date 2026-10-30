@@ -1,8 +1,7 @@
 package net.hugmesh.tubebff.media;
 
+import net.hugmesh.tubebff.testsupport.TestProfileKeys;
 import org.junit.jupiter.api.Test;
-
-import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -20,9 +19,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class TubeMediaTokenServiceTest {
 
-    /** A 32-byte test key, base64-encoded. */
-    private static final String TEST_KEY =
-            Base64.getEncoder().encodeToString("01234567890123456789012345678901".getBytes());
+    /** A 32-byte test key, base64-encoded — the same fixture the full-context tests use. */
+    private static final String TEST_KEY = TestProfileKeys.mediaKey();
 
     private TubeMediaTokenService service() {
         return new TubeMediaTokenService(TEST_KEY);

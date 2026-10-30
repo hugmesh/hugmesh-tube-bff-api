@@ -4,8 +4,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import net.hugmesh.commons.testsupport.PostgresTestSupport;
+import net.hugmesh.tubebff.testsupport.TestProfileKeys;
 
 /**
  * Context-load smoke test: the full Spring context boots under the {@code test}
@@ -23,6 +26,13 @@ class TubeBffApplicationContextTest extends PostgresTestSupport {
     /** No live Casdoor issuer in CI — mock the reactive JWT decoder so the
      *  oauth2 resource-server wiring is satisfied without a network call. */
     @MockitoBean ReactiveJwtDecoder reactiveJwtDecoder;
+
+    /** The fail-closed key beans (TokenCipher, GoogleConnectState, TubeMediaTokenService)
+     *  need well-formed test keys; they are built at runtime, see {@link TestProfileKeys}. */
+    @DynamicPropertySource
+    static void tubeTestProfileKeys(DynamicPropertyRegistry registry) {
+        TestProfileKeys.register(registry);
+    }
 
     @Test
     void contextLoads() {

@@ -23,6 +23,8 @@ In scope: this service's code, its configuration defaults, its container image
 (`Dockerfile`) and the download worker under `downloader/`. How the service is
 authenticated and authorised is described in `README.md`.
 
-The test-only keys in `src/main/resources/application-test.yml` are placeholder
-values for the test profile and are not secrets. A report that only points at
+The test-only keys the full-context tests use are built at runtime by
+`src/test/java/net/hugmesh/tubebff/testsupport/TestProfileKeys.java` from
+deterministic byte runs. They are placeholders, not secrets, and they are not
+in `application-test.yml` or the shipped jar. A report that only points at
 them is not a vulnerability.
