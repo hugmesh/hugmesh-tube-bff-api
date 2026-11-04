@@ -44,10 +44,11 @@ As of 2026-10-15 this BFF sits on the unified HugMesh ecosystem baseline:
   `RETURNING id` inserts (`TubeAccessR2dbcRepository`, `DownloadJobR2dbcRepository`).
   There is no `DatabaseClient` raw SQL.
 - **CI is GitLab** (`.gitlab-ci.yml`). The GitHub repo is pull-mirrored into in-cluster
-  GitLab. The only GitHub Actions workflow is `.github/workflows/release.yml`, the beta
-  image release (push to `main`, `v*` tags, manual dispatch); it runs no tests. The
+  GitLab. The only GitHub Actions workflow is `.github/workflows/release.yml`, the
+  image release (push to `main` or `release/X.Y`, `v*` tags, manual dispatch); it runs
+  only its own release-guard self-tests, not the Maven suite. The
   `Dockerfile` can also resolve the `net.hugmesh` dependencies from GitHub Packages; see
-  [CI](#ci) and [Releases (beta)](#releases-beta).
+  [CI](#ci) and [Releases](#releases).
 - **API↔API mTLS (server side) is wired.** `server.ssl.*` is off by default
   (`SSL_ENABLED=false`, `SSL_CLIENT_AUTH=none`), so local, dev and CI run plaintext. A
   deployment turns it on by mounting a PKCS12 keystore (this service's Vault-PKI-issued
@@ -307,29 +308,42 @@ Build and test locally: `./mvnw -DskipITs test`. A `native` Maven profile is als
 (`./mvnw -Pnative native:compile` — GraalVM binary, needs a GraalVM host). AOT
 reachability hints live in `config.NativeHintsConfig`.
 
-## Releases (beta)
+## Releases
 
-The version is the project `<version>` in `pom.xml`, currently `0.2.0-beta.1`
-(`MAJOR.MINOR.PATCH-beta.N`, the org beta scheme). `.github/workflows/release.yml`
-publishes `ghcr.io/hugmesh/hugmesh-tube-bff-api`:
+The version is the project `<version>` in `pom.xml`, currently `0.2.0-beta.1`.
+`.github/workflows/release.yml` publishes `ghcr.io/hugmesh/hugmesh-tube-bff-api`, and
+`scripts/release-version.sh` decides what each run may push. The tag decides the channel:
 
 - a push to `main` pushes `:main` and `:sha-<12 hex>`;
-- pushing the tag `v<version>` (for example `v0.2.0-beta.1`) pushes `:<version>`,
-  `:beta` and `:sha-<12 hex>`, and creates a GitHub Release marked prerelease and
-  not latest. The tag must equal `v` + the pom version, and an existing `:<version>`
-  is never overwritten: a fix raises N (`-beta.2`);
-- a manual dispatch on a `v*` tag re-runs that release; on `main` it is a main build.
-  A dispatch re-run only helps when the image was never pushed: once
-  `:<version>` exists the run stops at the overwrite check. If only the
-  GitHub Release step failed, use "Re-run failed jobs" on the original run.
+- a push to `release/X.Y` pushes `:sha-<12 hex>` only (the pom must be `X.Y.*`);
+- the tag `vX.Y.Z-beta.N` (beta channel) is accepted only on a commit on `main`. It
+  pushes `:X.Y.Z-beta.N`, `:sha-<12 hex>` and the floating `:beta`, and creates a GitHub
+  Release marked prerelease and not latest;
+- the tag `vX.Y.Z` (stable channel) is accepted only on a commit on `release/X.Y`. It
+  pushes `:X.Y.Z`, `:sha-<12 hex>`, the floating `:X.Y` and, only when `X.Y` is the
+  newest stable line among this repo's `vA.B.C` tags, `:latest`. The GitHub Release is
+  marked Latest in that same case; a patch on an older line moves `:X.Y` but never
+  `:latest`. A stable older than an existing patch of its line is refused;
+- any other `v*` tag (`-rc.N`, ...) names no channel and is refused.
 
-`:latest` is never pushed for a beta. The image build needs the `net.hugmesh`
+The tag must equal `v` + the pom version, and an existing `:X.Y.Z` / `:X.Y.Z-beta.N`
+is never overwritten (fix forward: raise `-beta.N`, or the patch on `release/X.Y`); the
+floating `:beta`, `:X.Y` and `:latest` move. Every pushed tag is checked to name the one
+signed, attested digest. A manual dispatch on a `v*` tag re-runs that release; on a branch
+it is that branch's build. A dispatch re-run only helps when the image was never pushed:
+once `:<version>` exists the run stops at the overwrite check. If only the GitHub Release
+step failed, use "Re-run failed jobs" on the original run. The image job re-asks the
+guard right before the build, so a re-run never moves `:X.Y` or `:latest` backwards.
+
+The guard and the workflow steps are tested by `bash scripts/test-release-version.sh` and
+`python3 scripts/test-release-workflow.py` (no network, no Maven); the version job runs
+both before the guard. The image build needs the `net.hugmesh`
 libraries (build-config `0.6.0-beta.1`, parent `2.9.0-beta.1`, commons
 `2.2.0-beta.1`) to be readable from GitHub Packages first, and the
 `PACKAGES_READ_TOKEN` secret. Jobs run on the runner named by the
 `RUNS_ON_PUBLISH` variable (a JSON array) for `main`, `v*` tags and their
-dispatches, and on hosted `ubuntu-latest` otherwise or when the variable is unset.
-The `downloader/` image has no publisher.
+dispatches, and on hosted `ubuntu-latest` otherwise (including `release/X.Y` pushes) or
+when the variable is unset. The `downloader/` image has no publisher.
 
 ## Roadmap
 
