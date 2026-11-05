@@ -20,7 +20,7 @@
   <!-- NO -api suffix in the artifactId (mirrors owncast-bff / wiki-bff / forum-bff /
        user-bff / admin-bff): -api is only in the repo/service/image name. -->
   <artifactId>tube-bff</artifactId>
-  <version>0.2.0-beta.1</version>
+  <version>0.4.0-beta.2</version>
   <!-- Same licence as the LICENSE file at the repo root (MIT, as across the hugmesh org).
        hugmesh-parent declares no <licenses>, so it is stated here. -->
   <licenses>
